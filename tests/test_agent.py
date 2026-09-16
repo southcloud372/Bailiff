@@ -6,7 +6,7 @@ from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import AIMessage, BaseMessage
 from langchain_core.outputs import ChatGeneration, ChatResult
 
-from agent_platform.core.agent import build_agent, build_tools
+from agent_platform.core.agent import build_agent, build_tools, principal_context
 from agent_platform.gateway.config import ModelSettings, Settings
 from agent_platform.gateway.errors import PermissionDenied
 from agent_platform.gateway.policy import Principal
@@ -48,20 +48,21 @@ class _ScriptedModel(BaseChatModel):
 async def test_build_tools_routes_through_gateway(tmp_path: Path) -> None:
     platform = _platform(tmp_path)
     principal = Principal(id="agent", roles=frozenset({"agent"}))
-    tools = build_tools(platform.gateway, principal)
+    tools = build_tools(platform.gateway)
     by_name = {t.name: t for t in tools}
 
     assert set(by_name) == {"read_file", "write_file", "list_dir"}
 
-    written = await by_name["write_file"].ainvoke({"path": "a.txt", "content": "hi"})
-    assert written.endswith("a.txt")
-    assert await by_name["read_file"].ainvoke({"path": "a.txt"}) == "hi"
+    with principal_context(principal):
+        written = await by_name["write_file"].ainvoke({"path": "a.txt", "content": "hi"})
+        assert written.endswith("a.txt")
+        assert await by_name["read_file"].ainvoke({"path": "a.txt"}) == "hi"
 
     # 越权：guest 无 agent 角色，工具调用应被网关拒绝
     guest = Principal(id="guest", roles=frozenset({"guest"}))
-    guest_read = {t.name: t for t in build_tools(platform.gateway, guest)}["read_file"]
-    with pytest.raises(PermissionDenied):
-        await guest_read.ainvoke({"path": "a.txt"})
+    with principal_context(guest):
+        with pytest.raises(PermissionDenied):
+            await by_name["read_file"].ainvoke({"path": "a.txt"})
 
 
 @pytest.mark.asyncio
@@ -88,11 +89,10 @@ async def test_agent_loop_with_fake_model(tmp_path: Path) -> None:
     agent = build_agent(
         ModelSettings(api_key="k", model="deepseek-chat"),
         platform.gateway,
-        principal,
         model=model,
     )
 
-    reply = await agent.chat("写一个文件")
+    reply = await agent.chat("写一个文件", principal=principal)
 
     assert reply == "已完成"
     # 工具确实经网关执行，文件落盘

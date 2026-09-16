@@ -1,4 +1,4 @@
-"""API 端到端冒烟：healthz → 签发 token → 列工具 → 写/读文件 → 越权 403。
+"""API 端到端冒烟：healthz → 签发 token → 列工具 → 写/读文件 → 越权 403 → Agent 对话。
 
 前置：先启动服务（uv run python scripts/serve.py），再跑本脚本。
 用法：uv run python scripts/smoke_api.py
@@ -51,6 +51,15 @@ def main() -> None:
             json={"tool": "read_file", "arguments": {"path": "hello.txt"}},
         )
         print("denied(guest)", r.status_code, r.json())
+
+    # Agent 对话走真实模型，耗时较长，单独放宽超时。
+    with httpx.Client(base_url=BASE, timeout=120) as client:
+        r = client.post(
+            "/v1/chat",
+            headers=agent_headers,
+            json={"message": "调用 read_file 工具读取 hello.txt，把内容告诉我"},
+        )
+        print("chat", r.status_code, r.json())
 
 
 if __name__ == "__main__":

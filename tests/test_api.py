@@ -6,6 +6,7 @@ import pytest
 from agent_platform.api.app import create_app
 from agent_platform.gateway.auth import encode_token
 from agent_platform.gateway.config import Settings
+from agent_platform.gateway.policy import Principal
 from agent_platform.gateway.wiring import build_platform
 
 SECRET = "test-secret-key-for-unit-tests-0123456789"
@@ -119,3 +120,45 @@ def test_mcp_filesystem_endpoint_mounted(tmp_path: Path) -> None:
     # 这里只验证挂载存在（真实行为由 scripts/smoke_api.py 跑 uvicorn 覆盖）。
     mounts = [r for r in app.routes if isinstance(r, Mount)]
     assert any(m.path == "/mcp/fs" for m in mounts)
+
+
+class _FakeAgent:
+    """鸭子类型的假 Agent：/v1/chat 只依赖 chat(message, thread_id, principal)。"""
+
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, str, str]] = []
+
+    async def chat(
+        self, message: str, *, thread_id: str, principal: Principal
+    ) -> str:
+        self.calls.append((message, thread_id, principal.id))
+        return f"echo:{message}"
+
+
+@pytest.mark.asyncio
+async def test_chat_requires_auth(tmp_path: Path) -> None:
+    async with _make_app(tmp_path) as client:
+        resp = await client.post("/v1/chat", json={"message": "hi"})
+        assert resp.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_chat_without_agent_503(tmp_path: Path) -> None:
+    async with _make_app(tmp_path) as client:
+        resp = await client.post("/v1/chat", headers=_auth(), json={"message": "hi"})
+        assert resp.status_code == 503
+
+
+@pytest.mark.asyncio
+async def test_chat_returns_reply_and_passes_principal(tmp_path: Path) -> None:
+    settings = Settings(jwt_secret=SECRET, fs_root=tmp_path)
+    fake = _FakeAgent()
+    app = create_app(build_platform(settings), agent=fake)
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://localhost:8000"
+    ) as client:
+        resp = await client.post("/v1/chat", headers=_auth(), json={"message": "hi"})
+        assert resp.status_code == 200
+        assert resp.json() == {"reply": "echo:hi"}
+        # 用户身份（JWT principal）贯穿到了 Agent
+        assert fake.calls == [("hi", "u1", "u1")]

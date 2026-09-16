@@ -16,11 +16,12 @@ from agent_platform.gateway.wiring import build_platform
 async def main() -> int:
     platform = build_platform()
     principal = Principal(id="demo", roles=frozenset({"agent"}))
-    agent = build_agent(ModelSettings(), platform.gateway, principal)
+    agent = build_agent(ModelSettings(), platform.gateway)
 
     reply = await agent.chat(
         "请先调用 write_file 工具，在路径 hello.txt 写入内容「你好，校招」；"
-        "然后用 read_file 工具读回 hello.txt，把读到的内容告诉我。"
+        "然后用 read_file 工具读回 hello.txt，把读到的内容告诉我。",
+        principal=principal,
     )
     print("[成功] Agent 端到端调用正常")
     print("---")

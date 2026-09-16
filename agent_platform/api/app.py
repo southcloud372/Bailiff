@@ -4,6 +4,7 @@
 - GET  /healthz       存活探针
 - GET  /v1/tools      列出工具（需鉴权）
 - POST /v1/call       调用工具（Bearer 鉴权 → 网关治理四件套）
+- POST /v1/chat       Agent 对话（Bearer 鉴权 → principal 贯穿 Agent → 网关工具）
 - /mcp/fs/mcp         文件系统 MCP server（streamable HTTP，供外部 MCP 客户端）
 """
 
@@ -11,7 +12,7 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from typing import Annotated, Any, cast
+from typing import Annotated, Any, Protocol, cast
 
 from fastapi import Depends, FastAPI, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -27,11 +28,28 @@ from agent_platform.tools.filesystem import create_filesystem_server
 _bearer = HTTPBearer(auto_error=False)
 
 
+class ChatAgent(Protocol):
+    """API 层对 Agent 的最小依赖接口（可对话），具体实现见 core.agent.Agent。
+
+    用 Protocol 而非具体类型：API 层不直接 import langchain，测试可用鸭子类型注入。
+    """
+
+    async def chat(
+        self, message: str, *, thread_id: str, principal: Principal
+    ) -> str: ...
+
+
 class CallRequest(BaseModel):
     """一次工具调用请求。"""
 
     tool: str
     arguments: dict[str, Any] = Field(default_factory=dict)
+
+
+class ChatRequest(BaseModel):
+    """一次 Agent 对话请求。"""
+
+    message: str
 
 
 def _platform(request: Request) -> Platform:
@@ -50,8 +68,13 @@ def _get_principal(
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, str(exc)) from exc
 
 
-def create_app(platform: Platform | None = None) -> FastAPI:
-    """构建 FastAPI 应用（含 MCP mount）。"""
+def create_app(platform: Platform | None = None, *, agent: ChatAgent | None = None) -> FastAPI:
+    """构建 FastAPI 应用（含 MCP mount）。
+
+    agent 由调用方组装后注入（默认不内置），未注入时 /v1/chat 返回 503；
+    具体接线见 scripts/serve.py。这样 build_platform 保持「网关组合」的纯粹职责，
+    不隐式引入模型依赖。
+    """
     platform = platform or build_platform()
 
     # 文件系统 MCP server：以 streamable HTTP 暴露给外部 MCP 客户端。
@@ -69,6 +92,7 @@ def create_app(platform: Platform | None = None) -> FastAPI:
 
     app = FastAPI(title="Agent Platform Gateway", version="0.1.0", lifespan=lifespan)
     app.state.platform = platform
+    app.state.agent = agent
     app.mount("/mcp/fs", mcp_app)
 
     @app.get("/healthz")
@@ -101,5 +125,20 @@ def create_app(platform: Platform | None = None) -> FastAPI:
         except SandboxViolation as exc:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, f"沙箱违规: {exc}") from exc
         return {"result": result}
+
+    @app.post("/v1/chat")
+    async def chat(
+        request: Request,
+        payload: ChatRequest,
+        principal: Annotated[Principal, Depends(_get_principal)],
+    ) -> dict[str, str]:
+        agent_obj = cast(ChatAgent | None, request.app.state.agent)
+        if agent_obj is None:
+            raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "未配置模型")
+        # thread_id 用用户 id，使同一用户的对话保持上下文连续性（checkpoint 按 thread 分片）
+        reply = await agent_obj.chat(
+            payload.message, thread_id=principal.id, principal=principal
+        )
+        return {"reply": reply}
 
     return app
