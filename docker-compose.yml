@@ -1,0 +1,35 @@
+# Phase 0 目标基础设施：PostgreSQL(pgvector) + Redis
+# 说明：本机暂未安装 Docker Desktop，安装后 `docker compose up -d` 即可拉起。
+# Langfuse（可观测）在 Phase 3 追加，届时改用官方 compose 编排或并入本文件。
+
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    container_name: agent-db
+    environment:
+      POSTGRES_USER: agent
+      POSTGRES_PASSWORD: agent
+      POSTGRES_DB: agent_platform
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U agent -d agent_platform"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: agent-redis
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  pgdata:
