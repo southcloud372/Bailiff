@@ -20,3 +20,13 @@ class Settings(BaseSettings):
     rate_limit_refill_per_second: float = 10.0
 
     fs_root: Path = Path("./data/fs")
+
+
+class ModelSettings(BaseSettings):
+    """模型路由配置。env 前缀 DEEPSEEK_，与网关配置分离（模型层独立演化）。"""
+
+    model_config = SettingsConfigDict(env_file=".env", env_prefix="DEEPSEEK_", extra="ignore")
+
+    api_key: str = ""
+    base_url: str = "https://api.deepseek.com"
+    model: str = "deepseek-chat"
