@@ -30,3 +30,7 @@ class ModelSettings(BaseSettings):
     api_key: str = ""
     base_url: str = "https://api.deepseek.com"
     model: str = "deepseek-chat"
+
+    # 成本限额（token 经济学）：0 = 不限。
+    cost_limit: float = 0.0
+    token_limit: int = 0

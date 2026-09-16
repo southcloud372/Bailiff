@@ -27,6 +27,7 @@ from agent_platform.gateway.policy import Principal
 from agent_platform.gateway.security import SandboxViolation
 from agent_platform.gateway.wiring import Platform, build_platform
 from agent_platform.guardrails.guards import GuardViolation
+from agent_platform.router.budget import BudgetExceeded
 from agent_platform.router.cost import CostTracker
 from agent_platform.tools.filesystem import create_filesystem_server
 
@@ -183,6 +184,8 @@ def create_app(
             )
         except GuardViolation as exc:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
+        except BudgetExceeded as exc:
+            raise HTTPException(status.HTTP_402_PAYMENT_REQUIRED, str(exc)) from exc
         return {"reply": reply}
 
     @app.post("/v1/chat/stream")
@@ -207,6 +210,8 @@ def create_app(
                     yield _sse({"delta": delta})
                 yield "data: [DONE]\n\n"
             except GuardViolation as exc:
+                yield _sse({"error": str(exc)})
+            except BudgetExceeded as exc:
                 yield _sse({"error": str(exc)})
 
         return StreamingResponse(

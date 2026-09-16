@@ -11,6 +11,7 @@ from agent_platform.gateway.config import Settings
 from agent_platform.gateway.policy import Principal
 from agent_platform.gateway.wiring import build_platform
 from agent_platform.guardrails.guards import GuardViolation
+from agent_platform.router.budget import BudgetExceeded
 from agent_platform.router.cost import CostTracker
 
 SECRET = "test-secret-key-for-unit-tests-0123456789"
@@ -253,6 +254,33 @@ async def test_chat_stream_guard_violation_yields_error_event(tmp_path: Path) ->
         )
         assert resp.status_code == 200
         assert "检测到疑似 Prompt 注入" in resp.text
+
+
+class _BudgetFakeAgent:
+    """模拟预算超限：抛 BudgetExceeded，验证 API 映射为 402。"""
+
+    async def chat(
+        self, message: str, *, thread_id: str, principal: Principal
+    ) -> str:
+        raise BudgetExceeded("累计费用已达上限")
+
+    async def stream(
+        self, message: str, *, thread_id: str, principal: Principal
+    ) -> AsyncIterator[str]:
+        raise BudgetExceeded("累计费用已达上限")
+        yield  # pragma: no cover
+
+
+@pytest.mark.asyncio
+async def test_chat_budget_exceeded_maps_to_402(tmp_path: Path) -> None:
+    settings = Settings(jwt_secret=SECRET, fs_root=tmp_path)
+    app = create_app(build_platform(settings), agent=_BudgetFakeAgent())
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://localhost:8000"
+    ) as client:
+        resp = await client.post("/v1/chat", headers=_auth(), json={"message": "hi"})
+        assert resp.status_code == 402
+        assert "上限" in resp.json()["detail"]
 
 
 async def _sensitive_classify(request: str) -> ClassifyResult:

@@ -39,6 +39,7 @@ from agent_platform.guardrails.guards import (
     default_input_guard,
     default_output_guard,
 )
+from agent_platform.router.budget import BudgetPolicy
 from agent_platform.router.cost import CostCallbackHandler, CostTracker
 
 # 每个请求/会话的「当前调用方身份」，工具执行时从这里解析 principal。
@@ -128,10 +129,19 @@ class Agent:
         *,
         input_guard: InputGuard | None = None,
         output_guard: OutputGuard | None = None,
+        budget: BudgetPolicy | None = None,
+        cost_tracker: CostTracker | None = None,
     ) -> None:
         self._graph = graph
         self._input_guard = input_guard or default_input_guard
         self._output_guard = output_guard or default_output_guard
+        self._budget = budget
+        self._cost_tracker = cost_tracker
+
+    def _check_budget(self) -> None:
+        """模型调用前检查预算：仅在同时配置了预算与成本追踪时生效。"""
+        if self._budget is not None and self._cost_tracker is not None:
+            self._budget.check(self._cost_tracker)
 
     async def chat(
         self, message: str, *, thread_id: str = "default", principal: Principal
@@ -143,6 +153,7 @@ class Agent:
         check = self._input_guard.check(message)
         if not check.allowed:
             raise GuardViolation(check.reason)
+        self._check_budget()
         with principal_context(principal):
             result = await self._graph.ainvoke(
                 {"messages": [HumanMessage(content=message)]},
@@ -166,6 +177,7 @@ class Agent:
         check = self._input_guard.check(message)
         if not check.allowed:
             raise GuardViolation(check.reason)
+        self._check_budget()
         with principal_context(principal):
             async for chunk, _metadata in self._graph.astream(
                 {"messages": [HumanMessage(content=message)]},
@@ -187,9 +199,24 @@ def build_agent(
     cost_tracker: CostTracker | None = None,
     input_guard: InputGuard | None = None,
     output_guard: OutputGuard | None = None,
+    budget: BudgetPolicy | None = None,
 ) -> Agent:
-    """组装 Agent：默认用 DeepSeek，测试可注入假模型。护栏默认开启。"""
+    """组装 Agent：默认用 DeepSeek，测试可注入假模型。护栏默认开启。
+
+    预算：显式传入 budget 优先；否则若 settings 配置了 cost_limit / token_limit，
+    自动构造 BudgetPolicy。预算需配合 cost_tracker（记账）才生效。
+    """
     model = model or build_model(settings, cost_tracker=cost_tracker)
     tools = build_tools(gateway)
     graph = create_agent(model, tools, checkpointer=MemorySaver())
-    return Agent(graph, input_guard=input_guard, output_guard=output_guard)
+    if budget is None and (settings.cost_limit > 0 or settings.token_limit > 0):
+        budget = BudgetPolicy(
+            cost_limit=settings.cost_limit, token_limit=settings.token_limit
+        )
+    return Agent(
+        graph,
+        input_guard=input_guard,
+        output_guard=output_guard,
+        budget=budget,
+        cost_tracker=cost_tracker,
+    )
