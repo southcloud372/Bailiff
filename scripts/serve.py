@@ -10,6 +10,7 @@ import uvicorn
 
 from agent_platform.api.app import create_app
 from agent_platform.core.agent import build_agent
+from agent_platform.core.workflow import build_ticket_workflow
 from agent_platform.gateway.config import ModelSettings
 from agent_platform.gateway.wiring import build_platform
 
@@ -17,7 +18,8 @@ from agent_platform.gateway.wiring import build_platform
 def main() -> None:
     platform = build_platform()
     agent = build_agent(ModelSettings(), platform.gateway)
-    app = create_app(platform, agent=agent)
+    workflow = build_ticket_workflow(platform.gateway)
+    app = create_app(platform, agent=agent, workflow=workflow)
     uvicorn.run(app, host="127.0.0.1", port=8000)
 
 

@@ -4,6 +4,7 @@ import httpx
 import pytest
 
 from agent_platform.api.app import create_app
+from agent_platform.core.workflow import ClassifyResult, build_ticket_workflow
 from agent_platform.gateway.auth import encode_token
 from agent_platform.gateway.config import Settings
 from agent_platform.gateway.policy import Principal
@@ -162,3 +163,62 @@ async def test_chat_returns_reply_and_passes_principal(tmp_path: Path) -> None:
         assert resp.json() == {"reply": "echo:hi"}
         # 用户身份（JWT principal）贯穿到了 Agent
         assert fake.calls == [("hi", "u1", "u1")]
+
+
+async def _sensitive_classify(request: str) -> ClassifyResult:
+    return ClassifyResult(
+        intent="sensitive",
+        tool_name="write_file",
+        tool_args={"path": "ticket.txt", "content": "approved"},
+    )
+
+
+async def _answer(request: str, result: object) -> str:
+    return f"ok:{result}"
+
+
+@pytest.mark.asyncio
+async def test_ticket_requires_auth(tmp_path: Path) -> None:
+    async with _make_app(tmp_path) as client:
+        resp = await client.post("/v1/tickets", json={"message": "写文件"})
+        assert resp.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_ticket_without_workflow_503(tmp_path: Path) -> None:
+    async with _make_app(tmp_path) as client:
+        resp = await client.post("/v1/tickets", headers=_auth(), json={"message": "写文件"})
+        assert resp.status_code == 503
+
+
+@pytest.mark.asyncio
+async def test_ticket_interrupt_and_resume_approve(tmp_path: Path) -> None:
+    settings = Settings(jwt_secret=SECRET, fs_root=tmp_path)
+    platform = build_platform(settings)
+    workflow = build_ticket_workflow(
+        platform.gateway, classify=_sensitive_classify, answer=_answer
+    )
+    app = create_app(platform, workflow=workflow)
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://localhost:8000"
+    ) as client:
+        headers = _auth()
+        r1 = await client.post(
+            "/v1/tickets", headers=headers, json={"message": "写文件", "thread_id": "tk1"}
+        )
+        assert r1.status_code == 200
+        body1 = r1.json()
+        assert body1["status"] == "interrupted"
+        assert body1["interrupt"]["action"] == "write_file"
+        # 审批前不落盘
+        assert not (tmp_path / "ticket.txt").exists()
+
+        r2 = await client.post(
+            "/v1/tickets/tk1/resume",
+            headers=headers,
+            json={"approve": True, "note": "同意"},
+        )
+        assert r2.status_code == 200
+        body2 = r2.json()
+        assert body2["status"] == "completed"
+        assert (tmp_path / "ticket.txt").read_text(encoding="utf-8") == "approved"

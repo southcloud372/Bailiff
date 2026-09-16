@@ -28,6 +28,10 @@ class Gateway:
         self._audit = audit
         self._rate_limiter = rate_limiter
 
+    def tool_names(self) -> frozenset[str]:
+        """已注册工具名（供编排层做工具发现/提示词构造）。"""
+        return self._registry.names()
+
     async def call(
         self, principal: Principal, tool: str, arguments: dict[str, Any]
     ) -> Any:

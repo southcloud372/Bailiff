@@ -18,6 +18,7 @@ from fastapi import Depends, FastAPI, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, Field
 
+from agent_platform.core.workflow import TicketWorkflow
 from agent_platform.gateway.auth import AuthenticationError
 from agent_platform.gateway.errors import PermissionDenied, RateLimitExceeded, UnknownTool
 from agent_platform.gateway.policy import Principal
@@ -52,6 +53,20 @@ class ChatRequest(BaseModel):
     message: str
 
 
+class TicketStartRequest(BaseModel):
+    """发起工单（HITL 工作流）。"""
+
+    message: str
+    thread_id: str | None = None
+
+
+class TicketResumeRequest(BaseModel):
+    """审批意见，用于恢复被暂停的工单。"""
+
+    approve: bool
+    note: str = ""
+
+
 def _platform(request: Request) -> Platform:
     return cast(Platform, request.app.state.platform)
 
@@ -68,10 +83,15 @@ def _get_principal(
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, str(exc)) from exc
 
 
-def create_app(platform: Platform | None = None, *, agent: ChatAgent | None = None) -> FastAPI:
+def create_app(
+    platform: Platform | None = None,
+    *,
+    agent: ChatAgent | None = None,
+    workflow: TicketWorkflow | None = None,
+) -> FastAPI:
     """构建 FastAPI 应用（含 MCP mount）。
 
-    agent 由调用方组装后注入（默认不内置），未注入时 /v1/chat 返回 503；
+    agent / workflow 由调用方组装后注入（默认不内置），未注入时对应端点返回 503；
     具体接线见 scripts/serve.py。这样 build_platform 保持「网关组合」的纯粹职责，
     不隐式引入模型依赖。
     """
@@ -93,6 +113,7 @@ def create_app(platform: Platform | None = None, *, agent: ChatAgent | None = No
     app = FastAPI(title="Agent Platform Gateway", version="0.1.0", lifespan=lifespan)
     app.state.platform = platform
     app.state.agent = agent
+    app.state.workflow = workflow
     app.mount("/mcp/fs", mcp_app)
 
     @app.get("/healthz")
@@ -140,5 +161,39 @@ def create_app(platform: Platform | None = None, *, agent: ChatAgent | None = No
             payload.message, thread_id=principal.id, principal=principal
         )
         return {"reply": reply}
+
+    @app.post("/v1/tickets")
+    async def start_ticket(
+        request: Request,
+        payload: TicketStartRequest,
+        principal: Annotated[Principal, Depends(_get_principal)],
+    ) -> dict[str, Any]:
+        wf = cast(TicketWorkflow | None, request.app.state.workflow)
+        if wf is None:
+            raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "未配置工作流")
+        run = await wf.start(
+            payload.message,
+            principal=principal,
+            thread_id=payload.thread_id or principal.id,
+        )
+        return run.model_dump()
+
+    @app.post("/v1/tickets/{thread_id}/resume")
+    async def resume_ticket(
+        request: Request,
+        thread_id: str,
+        payload: TicketResumeRequest,
+        principal: Annotated[Principal, Depends(_get_principal)],
+    ) -> dict[str, Any]:
+        wf = cast(TicketWorkflow | None, request.app.state.workflow)
+        if wf is None:
+            raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "未配置工作流")
+        run = await wf.resume(
+            thread_id,
+            principal=principal,
+            approve=payload.approve,
+            note=payload.note,
+        )
+        return run.model_dump()
 
     return app
