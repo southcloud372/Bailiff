@@ -2,11 +2,34 @@
 
 import pytest
 
+from agent_platform.gateway.config import KnowledgeSettings
 from agent_platform.knowledge.chunking import chunk_text, load_documents
 from agent_platform.knowledge.embedder import FakeEmbedder
 from agent_platform.knowledge.rag import RAGPipeline, build_grounded_prompt
 from agent_platform.knowledge.retriever import _lexical_overlap, retrieve
 from agent_platform.knowledge.store import InMemoryVectorStore, VectorRecord
+
+
+def test_knowledge_settings_derive_endpoints_from_infra_host() -> None:
+    # Docker 跑在 VMware 虚拟机里时，只需设置 infra_host，其余地址自动推导。
+    settings = KnowledgeSettings(
+        infra_host="192.168.220.128", embedding_base_url="", vector_dsn=""
+    )
+    assert settings.embedding_base_url == "http://192.168.220.128:11434/v1"
+    assert (
+        settings.vector_dsn
+        == "postgresql://agent:agent@192.168.220.128:5432/agent_platform"
+    )
+
+
+def test_knowledge_settings_explicit_override_wins() -> None:
+    settings = KnowledgeSettings(
+        infra_host="192.168.220.128",
+        embedding_base_url="http://10.0.0.5:9999/v1",
+        vector_dsn="postgresql://u:p@10.0.0.5:5432/db",
+    )
+    assert settings.embedding_base_url == "http://10.0.0.5:9999/v1"
+    assert settings.vector_dsn == "postgresql://u:p@10.0.0.5:5432/db"
 
 
 def test_chunk_text_splits_on_paragraph_boundaries() -> None:

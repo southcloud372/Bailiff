@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -41,9 +42,22 @@ class KnowledgeSettings(BaseSettings):
 
     model_config = SettingsConfigDict(env_file=".env", env_prefix="AGENT_", extra="ignore")
 
-    # 嵌入：默认本地 Ollama（OpenAI 兼容端点）。
-    embedding_base_url: str = "http://localhost:11434/v1"
+    # 基础设施主机：本机 Docker 用 localhost；Docker 跑在 VMware 虚拟机里时改成虚拟机 IP。
+    infra_host: str = "localhost"
+
+    # 嵌入：默认本地 Ollama（OpenAI 兼容端点）。留空则按 infra_host 推导。
+    embedding_base_url: str = ""
     embedding_model: str = "bge-m3"
 
-    # pgvector 连接串（对齐 docker-compose.yml 里的 db 服务）。
-    vector_dsn: str = "postgresql://agent:agent@localhost:5432/agent_platform"
+    # pgvector 连接串（对齐 docker-compose.yml 里的 db 服务）。留空则按 infra_host 推导。
+    vector_dsn: str = ""
+
+    @model_validator(mode="after")
+    def _derive_endpoints(self) -> KnowledgeSettings:
+        if not self.embedding_base_url:
+            self.embedding_base_url = f"http://{self.infra_host}:11434/v1"
+        if not self.vector_dsn:
+            self.vector_dsn = (
+                f"postgresql://agent:agent@{self.infra_host}:5432/agent_platform"
+            )
+        return self

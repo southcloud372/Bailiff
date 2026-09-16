@@ -62,8 +62,9 @@ uv run python scripts/serve.py            # API（127.0.0.1:8000）
 uv run python scripts/smoke_stream.py     # SSE 流式逐 token
 uv run python scripts/eval.py             # golden dataset + LLM-as-judge
 
-# 5. 启动基础设施（RAG / 长期记忆 / 可观测，需安装 Docker Desktop）
-#    详见 docs/docker-setup.md —— 列出所有你需要执行的 Docker 操作
+# 5. 启动基础设施（RAG / 长期记忆 / 可观测）
+#    Docker 可跑在本机 Docker Desktop，也可跑在 VMware 虚拟机里（用 AGENT_INFRA_HOST 指向虚拟机 IP）。
+#    完整步骤见 docs/docker-setup.md —— 列出所有你需要执行的 Docker 操作。
 docker compose up -d
 docker exec -it agent-ollama ollama pull bge-m3
 uv run python scripts/ingest.py --docs-dir examples/knowledge
