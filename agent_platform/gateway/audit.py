@@ -10,6 +10,8 @@ from typing import Any, Literal, Protocol
 
 from pydantic import BaseModel, Field
 
+Outcome = Literal["allowed", "denied", "rate_limited", "error"]
+
 
 class AuditEvent(BaseModel):
     """一次工具访问的审计记录。"""
@@ -18,7 +20,7 @@ class AuditEvent(BaseModel):
     principal_id: str
     tool: str
     arguments: dict[str, Any]
-    outcome: Literal["allowed", "denied", "error"]
+    outcome: Outcome
     duration_ms: float | None = None
 
 

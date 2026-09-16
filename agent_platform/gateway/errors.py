@@ -11,3 +11,7 @@ class PermissionDenied(GatewayError):
 
 class UnknownTool(GatewayError):
     """请求的工具未注册。"""
+
+
+class RateLimitExceeded(GatewayError):
+    """调用方触发限流。"""

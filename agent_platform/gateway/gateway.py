@@ -1,47 +1,55 @@
-"""网关编排：权限检查 → 执行 → 审计，串起治理闭环。"""
+"""网关编排：限流 → 权限检查 → 执行 → 审计，串起治理闭环。"""
 
 from __future__ import annotations
 
 import time
-from typing import Any, Literal
+from typing import Any
 
-from agent_platform.gateway.audit import AuditEvent, AuditLogger
-from agent_platform.gateway.errors import PermissionDenied, UnknownTool
+from agent_platform.gateway.audit import AuditEvent, AuditLogger, Outcome
+from agent_platform.gateway.errors import PermissionDenied, RateLimitExceeded, UnknownTool
 from agent_platform.gateway.policy import PermissionPolicy, Principal
+from agent_platform.gateway.ratelimit import RateLimiter
 from agent_platform.gateway.registry import ToolRegistry
-
-Outcome = Literal["allowed", "denied", "error"]
 
 
 class Gateway:
-    """工具调用的治理入口：默认拒绝 → 权限 → 执行 → 全程审计。"""
+    """工具调用的治理入口：限流 → 权限 → 执行 → 全程审计。"""
 
     def __init__(
         self,
         registry: ToolRegistry,
         policy: PermissionPolicy,
         audit: AuditLogger,
+        *,
+        rate_limiter: RateLimiter | None = None,
     ) -> None:
         self._registry = registry
         self._policy = policy
         self._audit = audit
+        self._rate_limiter = rate_limiter
 
     async def call(
         self, principal: Principal, tool: str, arguments: dict[str, Any]
     ) -> Any:
         start = time.perf_counter()
 
-        # 先权限后存在性：不向未授权调用方泄露「工具是否存在」。
+        # 1. 限流（最早，防 DoS）
+        if self._rate_limiter is not None and not self._rate_limiter.allow(principal.id):
+            self._record(principal, tool, arguments, "rate_limited", start)
+            raise RateLimitExceeded(principal.id)
+
+        # 2. 权限（先权限后存在性：不向未授权调用方泄露「工具是否存在」）
         if not self._policy.allows(principal, tool):
             self._record(principal, tool, arguments, "denied", start)
             raise PermissionDenied(tool)
 
+        # 3. 存在性（已授权但未注册 = 配置错误）
         fn = self._registry.get(tool)
         if fn is None:
-            # 已授权但未注册 = 服务端配置错误，按 error 审计
             self._record(principal, tool, arguments, "error", start)
             raise UnknownTool(tool)
 
+        # 4. 执行
         try:
             result = await fn(arguments)
         except Exception:

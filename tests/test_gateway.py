@@ -3,9 +3,10 @@ from typing import Any
 import pytest
 
 from agent_platform.gateway.audit import AuditLogger
-from agent_platform.gateway.errors import PermissionDenied, UnknownTool
+from agent_platform.gateway.errors import PermissionDenied, RateLimitExceeded, UnknownTool
 from agent_platform.gateway.gateway import Gateway
 from agent_platform.gateway.policy import PermissionPolicy, PermissionRule, Principal
+from agent_platform.gateway.ratelimit import RateLimiter
 from agent_platform.gateway.registry import ToolRegistry
 
 
@@ -77,3 +78,21 @@ async def test_tool_error_audited_as_error() -> None:
     with pytest.raises(ValueError):
         await gateway.call(principal, "boom", {})
     assert audit.events[-1].outcome == "error"
+
+
+@pytest.mark.asyncio
+async def test_rate_limit_exceeded() -> None:
+    registry = ToolRegistry()
+    registry.register("echo", _echo)
+    policy = PermissionPolicy(rules=[PermissionRule(tool="echo", roles=frozenset({"user"}))])
+    audit = AuditLogger()
+    limiter = RateLimiter(capacity=1, refill_per_second=0.0)
+    gateway = Gateway(registry, policy, audit, rate_limiter=limiter)
+    principal = Principal(id="u1", roles=frozenset({"user"}))
+
+    # 第一次通过
+    assert await gateway.call(principal, "echo", {"value": "a"}) == "a"
+    # 第二次超限
+    with pytest.raises(RateLimitExceeded):
+        await gateway.call(principal, "echo", {"value": "b"})
+    assert audit.events[-1].outcome == "rate_limited"
