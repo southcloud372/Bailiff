@@ -32,6 +32,13 @@ from pydantic import BaseModel, Field, SecretStr
 from agent_platform.gateway.config import ModelSettings
 from agent_platform.gateway.gateway import Gateway
 from agent_platform.gateway.policy import Principal
+from agent_platform.guardrails.guards import (
+    GuardViolation,
+    InputGuard,
+    OutputGuard,
+    default_input_guard,
+    default_output_guard,
+)
 from agent_platform.router.cost import CostCallbackHandler, CostTracker
 
 # 每个请求/会话的「当前调用方身份」，工具执行时从这里解析 principal。
@@ -115,20 +122,34 @@ def build_tools(gateway: Gateway) -> list[StructuredTool]:
 class Agent:
     """对编译好的 LangGraph agent 的高层封装。"""
 
-    def __init__(self, graph: CompiledStateGraph[Any, Any, Any, Any]) -> None:
+    def __init__(
+        self,
+        graph: CompiledStateGraph[Any, Any, Any, Any],
+        *,
+        input_guard: InputGuard | None = None,
+        output_guard: OutputGuard | None = None,
+    ) -> None:
         self._graph = graph
+        self._input_guard = input_guard or default_input_guard
+        self._output_guard = output_guard or default_output_guard
 
     async def chat(
         self, message: str, *, thread_id: str = "default", principal: Principal
     ) -> str:
-        """以指定身份运行一轮对话，返回最终回复文本。"""
+        """以指定身份运行一轮对话，返回最终回复文本。
+
+        输入护栏挡在模型之前（拦截注入），输出护栏挡在返回之前（脱敏）。
+        """
+        check = self._input_guard.check(message)
+        if not check.allowed:
+            raise GuardViolation(check.reason)
         with principal_context(principal):
             result = await self._graph.ainvoke(
                 {"messages": [HumanMessage(content=message)]},
                 config={"configurable": {"thread_id": thread_id}},
             )
         last = result["messages"][-1]
-        return str(last.content)
+        return self._output_guard.mask(str(last.content))
 
 
 def build_agent(
@@ -137,9 +158,11 @@ def build_agent(
     *,
     model: BaseChatModel | None = None,
     cost_tracker: CostTracker | None = None,
+    input_guard: InputGuard | None = None,
+    output_guard: OutputGuard | None = None,
 ) -> Agent:
-    """组装 Agent：默认用 DeepSeek，测试可注入假模型。"""
+    """组装 Agent：默认用 DeepSeek，测试可注入假模型。护栏默认开启。"""
     model = model or build_model(settings, cost_tracker=cost_tracker)
     tools = build_tools(gateway)
     graph = create_agent(model, tools, checkpointer=MemorySaver())
-    return Agent(graph)
+    return Agent(graph, input_guard=input_guard, output_guard=output_guard)

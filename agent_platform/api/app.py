@@ -24,6 +24,7 @@ from agent_platform.gateway.errors import PermissionDenied, RateLimitExceeded, U
 from agent_platform.gateway.policy import Principal
 from agent_platform.gateway.security import SandboxViolation
 from agent_platform.gateway.wiring import Platform, build_platform
+from agent_platform.guardrails.guards import GuardViolation
 from agent_platform.router.cost import CostTracker
 from agent_platform.tools.filesystem import create_filesystem_server
 
@@ -170,9 +171,12 @@ def create_app(
         if agent_obj is None:
             raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "未配置模型")
         # thread_id 用用户 id，使同一用户的对话保持上下文连续性（checkpoint 按 thread 分片）
-        reply = await agent_obj.chat(
-            payload.message, thread_id=principal.id, principal=principal
-        )
+        try:
+            reply = await agent_obj.chat(
+                payload.message, thread_id=principal.id, principal=principal
+            )
+        except GuardViolation as exc:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
         return {"reply": reply}
 
     @app.post("/v1/tickets")
