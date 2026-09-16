@@ -6,23 +6,38 @@ on:
   pull_request:
 
 jobs:
-  test:
+  quality:
+    name: lint + type + test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - uses: astral-sh/setup-uv@v5
+      - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-
-      - name: Install dependencies
-        run: uv sync
-
-      - name: Lint
+      - run: uv sync --all-groups
+      - name: Ruff
         run: uv run ruff check .
-
-      - name: Type check
+      - name: mypy
         run: uv run mypy agent_platform
-
-      - name: Tests
+      - name: pytest
         run: uv run pytest -q
+
+  # 评测回归：仅 main 推送触发，依赖 DEEPSEEK_API_KEY secret。
+  # 用真实模型跑 golden dataset + LLM-as-judge，非全绿即失败，守住质量底线。
+  eval:
+    name: golden-dataset eval
+    runs-on: ubuntu-latest
+    needs: quality
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: uv sync
+      - name: run eval
+        run: uv run python scripts/eval.py
+        env:
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
