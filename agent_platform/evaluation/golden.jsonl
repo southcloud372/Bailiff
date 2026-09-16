@@ -1,0 +1,10 @@
+{"id": "q001", "question": "1+1 等于几？", "reference": "2", "category": "math"}
+{"id": "q002", "question": "中国的首都是哪个城市？", "reference": "北京", "category": "knowledge"}
+{"id": "q003", "question": "在 Python 中如何定义一个空列表？", "reference": "[] 或 list()", "category": "coding"}
+{"id": "q004", "question": "HTTP 状态码 404 表示什么？", "reference": "资源未找到（Not Found）", "category": "http"}
+{"id": "q005", "question": "Git 中 git commit 命令的作用是什么？", "reference": "将暂存区的更改提交保存到版本历史", "category": "devops"}
+{"id": "q006", "question": "JSON 的全称是什么？", "reference": "JavaScript Object Notation", "category": "knowledge"}
+{"id": "q007", "question": "TCP 和 UDP 的主要区别是什么？", "reference": "TCP 面向连接、可靠传输；UDP 无连接、不可靠但更快", "category": "network"}
+{"id": "q008", "question": "REST 的全称是什么？", "reference": "Representational State Transfer", "category": "knowledge"}
+{"id": "q009", "question": "数组和链表在内存结构上的主要区别是什么？", "reference": "数组连续存储、支持随机访问；链表通过指针链接、插入删除更灵活", "category": "data-structure"}
+{"id": "q010", "question": "什么是 MCP（Model Context Protocol）？", "reference": "连接大模型与外部工具/数据源的标准化协议", "category": "agent"}
