@@ -34,3 +34,16 @@ class ModelSettings(BaseSettings):
     # 成本限额（token 经济学）：0 = 不限。
     cost_limit: float = 0.0
     token_limit: int = 0
+
+
+class KnowledgeSettings(BaseSettings):
+    """知识/记忆基础设施配置。env 前缀 AGENT_（与网关共用，字段互不冲突）。"""
+
+    model_config = SettingsConfigDict(env_file=".env", env_prefix="AGENT_", extra="ignore")
+
+    # 嵌入：默认本地 Ollama（OpenAI 兼容端点）。
+    embedding_base_url: str = "http://localhost:11434/v1"
+    embedding_model: str = "bge-m3"
+
+    # pgvector 连接串（对齐 docker-compose.yml 里的 db 服务）。
+    vector_dsn: str = "postgresql://agent:agent@localhost:5432/agent_platform"

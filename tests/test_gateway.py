@@ -10,7 +10,7 @@ from agent_platform.gateway.ratelimit import RateLimiter
 from agent_platform.gateway.registry import ToolRegistry
 
 
-async def _echo(arguments: dict[str, Any]) -> str:
+async def _echo(principal: Principal, arguments: dict[str, Any]) -> str:
     return arguments.get("value", "")
 
 
@@ -65,7 +65,7 @@ async def test_unauthorized_call_does_not_leak_tool_existence() -> None:
 
 @pytest.mark.asyncio
 async def test_tool_error_audited_as_error() -> None:
-    async def boom(arguments: dict[str, Any]) -> str:
+    async def boom(principal: Principal, arguments: dict[str, Any]) -> str:
         raise ValueError("boom")
 
     registry = ToolRegistry()
