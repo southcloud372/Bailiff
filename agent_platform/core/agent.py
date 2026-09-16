@@ -20,6 +20,7 @@ from contextlib import contextmanager
 from typing import Any
 
 from langchain.agents import create_agent
+from langchain_core.callbacks import BaseCallbackHandler
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import HumanMessage
 from langchain_core.tools import StructuredTool
@@ -31,6 +32,7 @@ from pydantic import BaseModel, Field, SecretStr
 from agent_platform.gateway.config import ModelSettings
 from agent_platform.gateway.gateway import Gateway
 from agent_platform.gateway.policy import Principal
+from agent_platform.router.cost import CostCallbackHandler, CostTracker
 
 # 每个请求/会话的「当前调用方身份」，工具执行时从这里解析 principal。
 current_principal: contextvars.ContextVar[Principal | None] = contextvars.ContextVar(
@@ -67,13 +69,22 @@ class ListDirArgs(BaseModel):
     path: str = Field(default=".", description="根目录内的相对目录路径")
 
 
-def build_model(settings: ModelSettings) -> ChatOpenAI:
-    """构建 LangChain 聊天模型（OpenAI 兼容 → DeepSeek）。"""
+def build_model(
+    settings: ModelSettings, *, cost_tracker: CostTracker | None = None
+) -> ChatOpenAI:
+    """构建 LangChain 聊天模型（OpenAI 兼容 → DeepSeek）。
+
+    传入 cost_tracker 时挂上计费回调，所有模型调用都会累计 token 与成本。
+    """
+    callbacks: list[BaseCallbackHandler] | None = (
+        [CostCallbackHandler(cost_tracker)] if cost_tracker is not None else None
+    )
     return ChatOpenAI(
         model=settings.model,
         api_key=SecretStr(settings.api_key),
         base_url=settings.base_url,
         temperature=0.3,
+        callbacks=callbacks,
     )
 
 
@@ -125,9 +136,10 @@ def build_agent(
     gateway: Gateway,
     *,
     model: BaseChatModel | None = None,
+    cost_tracker: CostTracker | None = None,
 ) -> Agent:
     """组装 Agent：默认用 DeepSeek，测试可注入假模型。"""
-    model = model or build_model(settings)
+    model = model or build_model(settings, cost_tracker=cost_tracker)
     tools = build_tools(gateway)
     graph = create_agent(model, tools, checkpointer=MemorySaver())
     return Agent(graph)

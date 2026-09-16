@@ -29,6 +29,7 @@ from agent_platform.core.agent import build_model, current_principal, principal_
 from agent_platform.gateway.config import ModelSettings
 from agent_platform.gateway.gateway import Gateway
 from agent_platform.gateway.policy import Principal
+from agent_platform.router.cost import CostTracker
 
 
 class ClassifyResult(BaseModel):
@@ -153,13 +154,14 @@ def build_ticket_workflow(
     model: BaseChatModel | None = None,
     classify: ClassifyFn | None = None,
     answer: AnswerFn | None = None,
+    cost_tracker: CostTracker | None = None,
 ) -> TicketWorkflow:
     """组装工单审批图。测试可注入 classify/answer（无需真实模型）。"""
     if classify is None:
-        model = model or build_model(ModelSettings())
+        model = model or build_model(ModelSettings(), cost_tracker=cost_tracker)
         classify = _default_classify(model, sorted(gateway.tool_names()))
     if answer is None:
-        model = model or build_model(ModelSettings())
+        model = model or build_model(ModelSettings(), cost_tracker=cost_tracker)
         answer = _default_answer(model)
 
     async def classify_node(state: TicketState) -> dict[str, Any]:

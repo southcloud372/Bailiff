@@ -24,6 +24,7 @@ from agent_platform.gateway.errors import PermissionDenied, RateLimitExceeded, U
 from agent_platform.gateway.policy import Principal
 from agent_platform.gateway.security import SandboxViolation
 from agent_platform.gateway.wiring import Platform, build_platform
+from agent_platform.router.cost import CostTracker
 from agent_platform.tools.filesystem import create_filesystem_server
 
 _bearer = HTTPBearer(auto_error=False)
@@ -88,12 +89,13 @@ def create_app(
     *,
     agent: ChatAgent | None = None,
     workflow: TicketWorkflow | None = None,
+    cost_tracker: CostTracker | None = None,
 ) -> FastAPI:
     """构建 FastAPI 应用（含 MCP mount）。
 
-    agent / workflow 由调用方组装后注入（默认不内置），未注入时对应端点返回 503；
-    具体接线见 scripts/serve.py。这样 build_platform 保持「网关组合」的纯粹职责，
-    不隐式引入模型依赖。
+    agent / workflow / cost_tracker 由调用方组装后注入（默认不内置），未注入时
+    对应端点返回 503；具体接线见 scripts/serve.py。这样 build_platform 保持
+    「网关组合」的纯粹职责，不隐式引入模型依赖。
     """
     platform = platform or build_platform()
 
@@ -114,11 +116,22 @@ def create_app(
     app.state.platform = platform
     app.state.agent = agent
     app.state.workflow = workflow
+    app.state.cost_tracker = cost_tracker
     app.mount("/mcp/fs", mcp_app)
 
     @app.get("/healthz")
     async def healthz() -> dict[str, str]:
         return {"status": "ok"}
+
+    @app.get("/v1/cost")
+    async def cost(
+        request: Request,
+        principal: Annotated[Principal, Depends(_get_principal)],
+    ) -> dict[str, Any]:
+        tracker = cast(CostTracker | None, request.app.state.cost_tracker)
+        if tracker is None:
+            raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "未配置成本追踪")
+        return tracker.summary().model_dump()
 
     @app.get("/v1/tools")
     async def list_tools(

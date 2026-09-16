@@ -3,6 +3,7 @@ from types import SimpleNamespace
 import pytest
 
 from agent_platform.gateway.config import ModelSettings
+from agent_platform.router.cost import CostTracker
 from agent_platform.router.llm import ModelRouter, ModelRoutingError, build_router
 
 
@@ -72,3 +73,22 @@ def test_build_router_requires_api_key() -> None:
 def test_build_router_no_models_raises() -> None:
     with pytest.raises(ModelRoutingError):
         ModelRouter([], api_key="k", base_url="http://x")
+
+
+@pytest.mark.asyncio
+async def test_router_records_cost_to_tracker() -> None:
+    tracker = CostTracker()
+
+    async def fake(**kwargs: object) -> SimpleNamespace:
+        return _resp("ok", model="m1", prompt=5, completion=2)
+
+    router = ModelRouter(
+        ["m1"], api_key="k", base_url="http://x", completion=fake, cost_tracker=tracker
+    )
+    await router.complete([{"role": "user", "content": "hi"}])
+
+    s = tracker.summary()
+    assert s.total_prompt_tokens == 5
+    assert s.total_completion_tokens == 2
+    # 未知模型报价缺失 → 成本 0，但用量仍被记录
+    assert s.total_cost == 0.0

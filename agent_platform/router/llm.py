@@ -16,6 +16,7 @@ import litellm
 from pydantic import BaseModel
 
 from agent_platform.gateway.config import ModelSettings
+from agent_platform.router.cost import CostTracker, estimate_cost
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +35,7 @@ class LLMResult(BaseModel):
     prompt_tokens: int = 0
     completion_tokens: int = 0
     total_tokens: int = 0
+    cost: float = 0.0
 
 
 class ModelRouter:
@@ -46,6 +48,7 @@ class ModelRouter:
         api_key: str,
         base_url: str,
         completion: CompletionFn = litellm.acompletion,
+        cost_tracker: CostTracker | None = None,
     ) -> None:
         if not models:
             raise ModelRoutingError("未配置任何候选模型")
@@ -53,6 +56,7 @@ class ModelRouter:
         self._api_key = api_key
         self._base_url = base_url
         self._completion = completion
+        self._cost_tracker = cost_tracker
 
     async def complete(self, messages: list[dict[str, Any]], **kwargs: Any) -> LLMResult:
         last_exc: Exception | None = None
@@ -77,12 +81,18 @@ class ModelRouter:
         choice = resp.choices[0].message
         content = (choice.content or "").strip()
         usage = resp.usage
+        prompt_tokens = int(usage.prompt_tokens or 0) if usage else 0
+        completion_tokens = int(usage.completion_tokens or 0) if usage else 0
+        cost = estimate_cost(model, prompt_tokens, completion_tokens)
+        if self._cost_tracker is not None:
+            self._cost_tracker.record(model, prompt_tokens, completion_tokens, cost)
         return LLMResult(
             model=resp.model or model,
             content=content,
-            prompt_tokens=int(usage.prompt_tokens or 0) if usage else 0,
-            completion_tokens=int(usage.completion_tokens or 0) if usage else 0,
-            total_tokens=int(usage.total_tokens or 0) if usage else 0,
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            total_tokens=prompt_tokens + completion_tokens,
+            cost=cost,
         )
 
 

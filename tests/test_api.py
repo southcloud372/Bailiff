@@ -9,6 +9,7 @@ from agent_platform.gateway.auth import encode_token
 from agent_platform.gateway.config import Settings
 from agent_platform.gateway.policy import Principal
 from agent_platform.gateway.wiring import build_platform
+from agent_platform.router.cost import CostTracker
 
 SECRET = "test-secret-key-for-unit-tests-0123456789"
 
@@ -222,3 +223,33 @@ async def test_ticket_interrupt_and_resume_approve(tmp_path: Path) -> None:
         body2 = r2.json()
         assert body2["status"] == "completed"
         assert (tmp_path / "ticket.txt").read_text(encoding="utf-8") == "approved"
+
+
+@pytest.mark.asyncio
+async def test_cost_requires_auth(tmp_path: Path) -> None:
+    async with _make_app(tmp_path) as client:
+        resp = await client.get("/v1/cost")
+        assert resp.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_cost_without_tracker_503(tmp_path: Path) -> None:
+    async with _make_app(tmp_path) as client:
+        resp = await client.get("/v1/cost", headers=_auth())
+        assert resp.status_code == 503
+
+
+@pytest.mark.asyncio
+async def test_cost_returns_summary(tmp_path: Path) -> None:
+    settings = Settings(jwt_secret=SECRET, fs_root=tmp_path)
+    tracker = CostTracker()
+    tracker.record("m1", 10, 5, 0.001)
+    app = create_app(build_platform(settings), cost_tracker=tracker)
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://localhost:8000"
+    ) as client:
+        resp = await client.get("/v1/cost", headers=_auth())
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["total_prompt_tokens"] == 10
+        assert body["by_model"]["m1"]["completion_tokens"] == 5
