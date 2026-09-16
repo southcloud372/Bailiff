@@ -39,6 +39,7 @@ from agent_platform.guardrails.guards import (
     default_input_guard,
     default_output_guard,
 )
+from agent_platform.observability.tracing import TracingCallback
 from agent_platform.router.budget import BudgetPolicy
 from agent_platform.router.cost import CostCallbackHandler, CostTracker
 
@@ -77,16 +78,34 @@ class ListDirArgs(BaseModel):
     path: str = Field(default=".", description="根目录内的相对目录路径")
 
 
+class SearchKnowledgeArgs(BaseModel):
+    """search_knowledge 的参数。"""
+
+    query: str = Field(description="要在企业知识库中检索的问题或关键词")
+
+
+class RememberArgs(BaseModel):
+    """remember 的参数。"""
+
+    content: str = Field(description="要写入当前用户长期记忆的内容")
+
+
+class RecallArgs(BaseModel):
+    """recall 的参数。"""
+
+    query: str = Field(description="要回忆的问题或关键词")
+
+
 def build_model(
     settings: ModelSettings, *, cost_tracker: CostTracker | None = None
 ) -> ChatOpenAI:
     """构建 LangChain 聊天模型（OpenAI 兼容 → DeepSeek）。
 
-    传入 cost_tracker 时挂上计费回调，所有模型调用都会累计 token 与成本。
+    挂两个回调：计费（累计 token 与成本）与可观测（OTel span，未配置时 no-op）。
     """
-    callbacks: list[BaseCallbackHandler] | None = (
-        [CostCallbackHandler(cost_tracker)] if cost_tracker is not None else None
-    )
+    callbacks: list[BaseCallbackHandler] = [TracingCallback()]
+    if cost_tracker is not None:
+        callbacks.append(CostCallbackHandler(cost_tracker))
     return ChatOpenAI(
         model=settings.model,
         api_key=SecretStr(settings.api_key),
@@ -113,11 +132,22 @@ def build_tools(gateway: Gateway) -> list[StructuredTool]:
             coroutine=_run,
         )
 
-    return [
+    tools = [
         _tool("read_file", "读取根目录内的文本文件内容", ReadFileArgs),
         _tool("write_file", "写入文本到根目录内的文件", WriteFileArgs),
         _tool("list_dir", "列出根目录内某个目录的内容", ListDirArgs),
     ]
+    # 知识/记忆工具由网关注册（serve.py 组装），这里按注册情况动态暴露给 Agent。
+    names = gateway.tool_names()
+    if "search_knowledge" in names:
+        tools.append(
+            _tool("search_knowledge", "检索企业知识库，返回带来源的上下文片段", SearchKnowledgeArgs)
+        )
+    if "remember" in names:
+        tools.append(_tool("remember", "把内容写入当前用户的长期记忆", RememberArgs))
+    if "recall" in names:
+        tools.append(_tool("recall", "按语义召回当前用户的长期记忆", RecallArgs))
+    return tools
 
 
 class Agent:

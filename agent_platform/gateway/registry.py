@@ -5,7 +5,10 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable
 from typing import Any
 
-ToolFn = Callable[[dict[str, Any]], Awaitable[Any]]
+from agent_platform.gateway.policy import Principal
+
+# 工具函数统一签名：调用方身份 + 参数 → 结果。身份用于按用户分域（如长期记忆）。
+ToolFn = Callable[[Principal, dict[str, Any]], Awaitable[Any]]
 
 
 class ToolRegistry:

@@ -53,9 +53,9 @@ class Gateway:
             self._record(principal, tool, arguments, "error", start)
             raise UnknownTool(tool)
 
-        # 4. 执行
+        # 4. 执行（把调用方身份传给工具，供按用户分域的工具使用）
         try:
-            result = await fn(arguments)
+            result = await fn(principal, arguments)
         except Exception:
             self._record(principal, tool, arguments, "error", start)
             raise

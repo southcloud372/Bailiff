@@ -1,6 +1,6 @@
-# Phase 0 目标基础设施：PostgreSQL(pgvector) + Redis
-# 说明：本机暂未安装 Docker Desktop，安装后 `docker compose up -d` 即可拉起。
-# Langfuse（可观测）在 Phase 3 追加，届时改用官方 compose 编排或并入本文件。
+# 目标基础设施：PostgreSQL(pgvector) + Redis + Ollama（本地嵌入）
+# 用法：docker compose up -d  （详见 docs/docker-setup.md）
+# Langfuse（可观测）为可选组件，后续并入本文件或单独编排。
 
 services:
   db:
@@ -31,5 +31,21 @@ services:
       timeout: 5s
       retries: 10
 
+  # 本地嵌入模型（OpenAI 兼容端点 /v1/embeddings），无外部 API key 依赖。
+  # 首次需手动拉取模型：docker exec -it agent-ollama ollama pull bge-m3
+  ollama:
+    image: ollama/ollama:latest
+    container_name: agent-ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama:/root/.ollama
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
 volumes:
   pgdata:
+  ollama:

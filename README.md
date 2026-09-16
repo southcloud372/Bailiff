@@ -62,8 +62,12 @@ uv run python scripts/serve.py            # API（127.0.0.1:8000）
 uv run python scripts/smoke_stream.py     # SSE 流式逐 token
 uv run python scripts/eval.py             # golden dataset + LLM-as-judge
 
-# 5.（可选）启动基础设施（需安装 Docker Desktop）
+# 5. 启动基础设施（RAG / 长期记忆 / 可观测，需安装 Docker Desktop）
+#    详见 docs/docker-setup.md —— 列出所有你需要执行的 Docker 操作
 docker compose up -d
+docker exec -it agent-ollama ollama pull bge-m3
+uv run python scripts/ingest.py --docs-dir examples/knowledge
+uv run python scripts/smoke_knowledge.py      # 验证知识/记忆（不依赖模型 key）
 ```
 
 ## 目录结构
@@ -74,8 +78,8 @@ docker compose up -d
 
 ```bash
 uv run ruff check .            # ✅ 全绿
-uv run mypy agent_platform     # ✅ strict 全绿（32 个源文件）
-uv run pytest -q               # ✅ 94 passed, 1 skipped
+uv run mypy agent_platform     # ✅ strict 全绿（40 个源文件）
+uv run pytest -q               # ✅ 111 passed, 1 skipped
 uv run python scripts/eval.py  # ✅ golden 10/10 通过，均分 98.3
 ```
 
@@ -83,9 +87,10 @@ uv run python scripts/eval.py  # ✅ golden 10/10 通过，均分 98.3
 
 - Phase 0 ✅ 骨架 + 依赖 + CI + ADR + 模型冒烟
 - Phase 1 ✅ MCP 网关 + 工具 server + 安全加固（鉴权/权限/限流/审计/路径穿越）
-- Phase 2 🟡 LangGraph 编排 + 模型路由 + HITL 已就绪；RAG 待 pgvector（本机 Docker 未装）
-- Phase 3 🟡 评测进 CI（golden + LLM-as-judge）已就绪；可观测（OTel/Langfuse）待 Docker
-- Phase 4 🟡 治理 + 护栏 + 成本追踪/限额已就绪；长期记忆待 pgvector
+- Phase 2 ✅ LangGraph 编排 + 模型路由 + HITL；RAG（pgvector + Ollama，混合检索 + 引用溯源）
+- Phase 3 ✅ 评测进 CI（golden + LLM-as-judge）；可观测（OTel → Langfuse 自托管，no-op 降级）
+- Phase 4 ✅ 治理 + 护栏 + 成本追踪/限额；长期记忆（向量化、按用户分域）
 - Phase 5 ✅ SSE 流式 + 前端 + 部署（Dockerfile/CI）+ 架构/ADR/演示文档
 
-> 🟡 = 部分完成：被 Docker/PostgreSQL 阻塞的部分（RAG、可观测、长期记忆）在安装 Docker 后补齐。
+> RAG / 可观测 / 长期记忆的代码已就绪并通过单测；运行需本地 Docker 拉起 pgvector + Ollama，
+> 步骤见 [docs/docker-setup.md](./docs/docker-setup.md)。
