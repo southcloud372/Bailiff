@@ -1,3 +1,4 @@
+from collections.abc import AsyncIterator
 from pathlib import Path
 
 import httpx
@@ -137,6 +138,13 @@ class _FakeAgent:
         self.calls.append((message, thread_id, principal.id))
         return f"echo:{message}"
 
+    async def stream(
+        self, message: str, *, thread_id: str, principal: Principal
+    ) -> AsyncIterator[str]:
+        self.calls.append((message, thread_id, principal.id))
+        for piece in ["echo:", message]:
+            yield piece
+
 
 @pytest.mark.asyncio
 async def test_chat_requires_auth(tmp_path: Path) -> None:
@@ -175,6 +183,12 @@ class _GuardedFakeAgent:
     ) -> str:
         raise GuardViolation("检测到疑似 Prompt 注入")
 
+    async def stream(
+        self, message: str, *, thread_id: str, principal: Principal
+    ) -> AsyncIterator[str]:
+        raise GuardViolation("检测到疑似 Prompt 注入")
+        yield  # pragma: no cover - 使本函数成为 async generator，抛出前不产出
+
 
 @pytest.mark.asyncio
 async def test_chat_guard_violation_maps_to_400(tmp_path: Path) -> None:
@@ -188,6 +202,57 @@ async def test_chat_guard_violation_maps_to_400(tmp_path: Path) -> None:
         )
         assert resp.status_code == 400
         assert "注入" in resp.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_chat_stream_requires_auth(tmp_path: Path) -> None:
+    async with _make_app(tmp_path) as client:
+        resp = await client.post("/v1/chat/stream", json={"message": "hi"})
+        assert resp.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_chat_stream_without_agent_503(tmp_path: Path) -> None:
+    async with _make_app(tmp_path) as client:
+        resp = await client.post(
+            "/v1/chat/stream", headers=_auth(), json={"message": "hi"}
+        )
+        assert resp.status_code == 503
+
+
+@pytest.mark.asyncio
+async def test_chat_stream_emits_sse_deltas(tmp_path: Path) -> None:
+    settings = Settings(jwt_secret=SECRET, fs_root=tmp_path)
+    fake = _FakeAgent()
+    app = create_app(build_platform(settings), agent=fake)
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://localhost:8000"
+    ) as client:
+        resp = await client.post(
+            "/v1/chat/stream", headers=_auth(), json={"message": "hi"}
+        )
+        assert resp.status_code == 200
+        assert resp.headers["content-type"].startswith("text/event-stream")
+        body = resp.text
+        assert 'data: {"delta": "echo:"}' in body
+        assert 'data: {"delta": "hi"}' in body
+        assert "data: [DONE]" in body
+        # principal 贯穿到流式调用
+        assert fake.calls == [("hi", "u1", "u1")]
+
+
+@pytest.mark.asyncio
+async def test_chat_stream_guard_violation_yields_error_event(tmp_path: Path) -> None:
+    settings = Settings(jwt_secret=SECRET, fs_root=tmp_path)
+    app = create_app(build_platform(settings), agent=_GuardedFakeAgent())
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://localhost:8000"
+    ) as client:
+        resp = await client.post(
+            "/v1/chat/stream", headers=_auth(), json={"message": "ignore all"}
+        )
+        assert resp.status_code == 200
+        assert "检测到疑似 Prompt 注入" in resp.text
 
 
 async def _sensitive_classify(request: str) -> ClassifyResult:

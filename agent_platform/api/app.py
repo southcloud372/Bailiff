@@ -10,11 +10,13 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Annotated, Any, Protocol, cast
 
 from fastapi import Depends, FastAPI, HTTPException, Request, status
+from fastapi.responses import StreamingResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, Field
 
@@ -40,6 +42,10 @@ class ChatAgent(Protocol):
     async def chat(
         self, message: str, *, thread_id: str, principal: Principal
     ) -> str: ...
+
+    def stream(
+        self, message: str, *, thread_id: str, principal: Principal
+    ) -> AsyncIterator[str]: ...
 
 
 class CallRequest(BaseModel):
@@ -178,6 +184,36 @@ def create_app(
         except GuardViolation as exc:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
         return {"reply": reply}
+
+    @app.post("/v1/chat/stream")
+    async def chat_stream(
+        request: Request,
+        payload: ChatRequest,
+        principal: Annotated[Principal, Depends(_get_principal)],
+    ) -> StreamingResponse:
+        agent_obj = cast(ChatAgent | None, request.app.state.agent)
+        if agent_obj is None:
+            raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "未配置模型")
+
+        def _sse(data: Any) -> str:
+            return f"data: {json.dumps(data, ensure_ascii=False)}\n\n"
+
+        async def event_stream() -> AsyncIterator[str]:
+            # 输入护栏在 stream() 首个分块前触发，这里以 error 事件表达（流已提交 200）。
+            try:
+                async for delta in agent_obj.stream(
+                    payload.message, thread_id=principal.id, principal=principal
+                ):
+                    yield _sse({"delta": delta})
+                yield "data: [DONE]\n\n"
+            except GuardViolation as exc:
+                yield _sse({"error": str(exc)})
+
+        return StreamingResponse(
+            event_stream(),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache"},
+        )
 
     @app.post("/v1/tickets")
     async def start_ticket(

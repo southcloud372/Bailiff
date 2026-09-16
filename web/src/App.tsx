@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { chat, healthz, listTools } from "./api";
+import { chatStream, healthz, listTools } from "./api";
 
 interface Message {
   role: "user" | "assistant";
@@ -61,14 +61,39 @@ export default function App() {
     setError(null);
     setBusy(true);
     setMessages((m) => [...m, { role: "user", content: text }]);
+    // 首个分块到达前不占 assistant 位置，让「思考中…」占位显示
+    let started = false;
+    const ensureAssistant = () => {
+      if (started) return;
+      started = true;
+      setMessages((m) => [...m, { role: "assistant", content: "" }]);
+    };
     try {
-      const { reply } = await chat(token.trim(), text);
-      setMessages((m) => [...m, { role: "assistant", content: reply }]);
+      await chatStream(token.trim(), text, (delta) => {
+        ensureAssistant();
+        setMessages((m) => {
+          const next = [...m];
+          const last = next[next.length - 1];
+          next[next.length - 1] = {
+            role: "assistant",
+            content: last.content + delta,
+          };
+          return next;
+        });
+      });
+      ensureAssistant(); // 空回复也落一个空位，避免「思考中」残留
     } catch (e) {
-      setMessages((m) => [
-        ...m,
-        { role: "assistant", content: `⚠️ ${(e as Error).message}` },
-      ]);
+      ensureAssistant();
+      setMessages((m) => {
+        const next = [...m];
+        const last = next[next.length - 1];
+        const prefix = last.content ? `${last.content}\n` : "";
+        next[next.length - 1] = {
+          role: "assistant",
+          content: `${prefix}⚠️ ${(e as Error).message}`,
+        };
+        return next;
+      });
     } finally {
       setBusy(false);
     }
@@ -125,15 +150,19 @@ export default function App() {
             {messages.map((m, i) => (
               <div key={i} className={`msg ${m.role}`}>
                 <div className="who">{m.role === "user" ? "你" : "Agent"}</div>
-                <pre className="content">{m.content}</pre>
+                <pre className="content">
+                  {m.content || (m.role === "assistant" ? "…" : "")}
+                </pre>
               </div>
             ))}
-            {busy && (
-              <div className="msg assistant">
-                <div className="who">Agent</div>
-                <div className="content">思考中…</div>
-              </div>
-            )}
+            {busy &&
+              (messages.length === 0 ||
+                messages[messages.length - 1].role === "user") && (
+                <div className="msg assistant">
+                  <div className="who">Agent</div>
+                  <div className="content">思考中…</div>
+                </div>
+              )}
           </div>
           <form
             className="composer"

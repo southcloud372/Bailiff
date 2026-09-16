@@ -15,14 +15,14 @@
 from __future__ import annotations
 
 import contextvars
-from collections.abc import Iterator
+from collections.abc import AsyncIterator, Iterator
 from contextlib import contextmanager
 from typing import Any
 
 from langchain.agents import create_agent
 from langchain_core.callbacks import BaseCallbackHandler
 from langchain_core.language_models.chat_models import BaseChatModel
-from langchain_core.messages import HumanMessage
+from langchain_core.messages import AIMessage, AIMessageChunk, HumanMessage
 from langchain_core.tools import StructuredTool
 from langchain_openai import ChatOpenAI
 from langgraph.checkpoint.memory import MemorySaver
@@ -150,6 +150,33 @@ class Agent:
             )
         last = result["messages"][-1]
         return self._output_guard.mask(str(last.content))
+
+    async def stream(
+        self, message: str, *, thread_id: str = "default", principal: Principal
+    ) -> AsyncIterator[str]:
+        """以指定身份运行一轮对话，**流式**产出回复分块（token 级）。
+
+        与 chat() 相同的输入护栏：疑似注入在模型调用前拦截（GuardViolation）。
+
+        注意（安全权衡，面试可讲）：流式场景下，输出脱敏无法对「已发送的分块」撤回，
+        因此这里**只做输入护栏**，输出脱敏不逐块应用——分块是原始文本。敏感内容的
+        脱敏由非流式 /v1/chat 与审计落库兜底；生产上可在流式缓冲上做「延迟窗口脱敏」，
+        以「晚一点、但完整」换取安全。这是流式体验与安全的经典取舍。
+        """
+        check = self._input_guard.check(message)
+        if not check.allowed:
+            raise GuardViolation(check.reason)
+        with principal_context(principal):
+            async for chunk, _metadata in self._graph.astream(
+                {"messages": [HumanMessage(content=message)]},
+                config={"configurable": {"thread_id": thread_id}},
+                stream_mode="messages",
+            ):
+                # 只取 AI 消息的内容分块；工具调用分块（content 为空）与工具结果消息跳过。
+                if isinstance(chunk, (AIMessage, AIMessageChunk)):
+                    text = chunk.content
+                    if isinstance(text, str) and text:
+                        yield text
 
 
 def build_agent(
