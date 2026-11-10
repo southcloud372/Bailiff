@@ -21,7 +21,7 @@ def main() -> int:
 
     api_key = os.getenv("DEEPSEEK_API_KEY")
     base_url = os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com").rstrip("/")
-    model = os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
+    model = os.getenv("DEEPSEEK_MODEL", "deepseek-flash")
 
     if not api_key:
         print("[错误] 未找到 DEEPSEEK_API_KEY，请检查 .env 文件", file=sys.stderr)

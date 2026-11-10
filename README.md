@@ -1,97 +1,210 @@
-# agent-platform · 企业级多智能体编排平台
+# Agent Platform
 
-> 面向 2026 校招（大厂 Agent 平台组方向）的旗舰项目。
-> 一套参考 **2026 七层 Agent 架构**、以 **MCP** 为集成主干、带**可观测 / 评测 / 治理闭环**的企业级智能体平台，Python 为主 + 轻量 React 前端。
+**Your agent works in a notebook. This is what it takes to put it in production.**
 
-## 一句话定位
+A production-grade agent runtime: every tool call goes through auth → permission → rate limit → audit, every step is checkpointed, every token is costed, and every release is gated by an evaluation suite.
 
-**证明你能做生产级 Agent 工程，而不是调 API 的 demo。** 落点永远是「可靠、安全、可量化、可扩展」，而不是 Agent 数量。
+[![CI](https://github.com/OWNER/agent-platform/actions/workflows/ci.yml/badge.svg)](../../actions)
+[![tests](https://img.shields.io/badge/tests-160%20passed-brightgreen)](tests/)
+[![python](https://img.shields.io/badge/python-3.13-blue)](pyproject.toml)
+[![mypy](https://img.shields.io/badge/mypy-strict-success)](pyproject.toml)
+[![license](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+[![MCP](https://img.shields.io/badge/MCP-2026--07--28-purple)](agent_platform/gateway/mcp_client.py)
 
-## 技术栈
+[中文文档](README.zh-CN.md) · [Architecture](docs/architecture.md) · [API](docs/api.md) · [Operations](docs/operations.md) · [Security](docs/security.md) · [ADRs](docs/adr/)
 
-`LangGraph` · 自建 `MCP 网关` · `LiteLLM` 模型路由 · `FastAPI` · `PostgreSQL + pgvector` · `Redis` · `OpenTelemetry + Langfuse` · `DeepEval / RAGAS` · `React + Vite`
+---
 
-## 架构（七层）
-
-```
-接入层 (FastAPI/SSE)     REST API · 流式 · 会话管理
-   ↓
-编排层 (LangGraph)       图状态机 · checkpoint · HITL · 子图
-   ↓
-治理层                   鉴权 · 权限 · 审计 · 护栏 · 成本追踪
-   ↓
-协议层 (MCP Gateway)     工具发现 · 白名单 · 限流 · 加固 · 审计
-   ↓
-模型层 (Router)          多供应商路由 · 大/小模型分工 · 重试降级
-   ↓
-记忆层 (Memory)          工作记忆 · 向量长期记忆 · 会话分域
-   ↓
-数据层                   PostgreSQL+pgvector · Redis
-─────────────────────────────────────────────
-横切：可观测 (OTel/Langfuse) · 评测 (DeepEval/RAGAS) · 安全
-```
-
-## 特性亮点
-
-- **自建 MCP 网关**：鉴权(JWT) / 权限白名单 / 限流 / 审计日志 / 路径穿越与注入加固
-- **LangGraph 编排**：checkpoint、断点续跑、time-travel 调试、真实 HITL 人工审批
-- **模型路由**：DeepSeek 为主，大模型规划 + 小模型抽取，token 成本追踪 + 硬限额（token 经济学）
-- **安全护栏**：Prompt 注入检测（中英双语）+ 输出密钥脱敏，挡在模型/返回之前
-- **SSE 流式**：`/v1/chat/stream` 逐 token 流式输出，React 前端流式渲染
-- **可观测**：OpenTelemetry (GenAI semconv) 全链路 trace → Langfuse（自托管）
-- **评测进 CI**：golden dataset + LLM-as-judge 回归（真机 10/10，均分 98.3）
-
-## 落地场景
-
-「企业知识助手 + 工单编排」：RAG 检索回答 + LangGraph 工作流（意图识别 → 信息收集 → 工具执行 → 人工审批），敏感操作走网关白名单与审计。
-
-## 快速开始
+## 60-second demo (no API key needed)
 
 ```bash
-# 1. 安装依赖（uv 管理）
-uv sync
+git clone https://github.com/OWNER/agent-platform && cd agent-platform
+docker compose -f docker-compose.demo.yml up --build
+# open http://localhost:8000 → click "演示登录" / "Demo login" → chat
+```
 
-# 2. 配置环境变量
-cp .env.example .env   # 填入 DEEPSEEK_API_KEY
+Without a key the model falls back to a deterministic offline model. The whole chain — auth, rate limiting, input guardrails, graph orchestration, SSE streaming, cost accounting, metrics, audit — runs for real; only the reasoning is faked. Point `DEEPSEEK_API_KEY` at a real key and nothing else changes.
 
-# 3. 模型冒烟测试
-uv run python scripts/smoke_deepseek.py
+Or run it locally:
 
-# 4. 起服务 + 流式对话 + 评测
-uv run python scripts/serve.py            # API（127.0.0.1:8000）
-uv run python scripts/smoke_stream.py     # SSE 流式逐 token
-uv run python scripts/eval.py             # golden dataset + LLM-as-judge
+```bash
+uv sync --extra prod          # Python 3.13 + uv
+cp .env.example .env          # optional: fill DEEPSEEK_API_KEY
+uv run python scripts/serve.py
+```
 
-# 5. 启动基础设施（RAG / 长期记忆 / 可观测）
-#    Docker 可跑在本机 Docker Desktop，也可跑在 VMware 虚拟机里（用 AGENT_INFRA_HOST 指向虚拟机 IP）。
-#    所有你需要做的操作已汇总到 docs/runbook.md —— 按顺序照做即可。
+## What's actually in here
+
+| Capability | Where | Why it matters |
+|---|---|---|
+| **Tool governance** | `gateway/gateway.py` | Rate limit → permission → existence → execute → audit. Agents never call tools directly, so a prompt injection can't reach the filesystem. |
+| **Checkpointed graph** | `core/checkpoint.py` | `memory` / `sqlite` / `postgres` backends. A human-approval interrupt survives a process restart — the #1 thing naive `MemorySaver` demos get wrong. |
+| **MCP gateway** | `gateway/mcp_client.py` | Dynamic `tools/list` discovery, namespace prefixing, per-server fault isolation, stdio + Streamable HTTP. |
+| **Reasoning-model adapter** | `router/deepseek.py` | Passes `reasoning_content` back on tool-call turns and repairs dangling `tool_calls` in history. See [field notes](#field-notes-two-bugs-you-will-hit). |
+| **Cost accounting** | `router/cost.py`, `router/budget.py` | Token-level callback metering, hard budget caps (402), cache-hit pricing, per-model breakdown. |
+| **RAG on pgvector** | `knowledge/` | Connection pool, HNSW + GIN indexes, metadata pre-filtering, citation-traceable context. |
+| **Evaluation in CI** | `evaluation/`, `scripts/eval.py` | `pass@k` for model selection, `pass^k` for reliability. Non-zero exit code blocks the release. |
+| **Observability** | `observability/` | `/healthz` vs `/readyz` (liveness ≠ readiness), Prometheus `/metrics`, OTel `gen_ai.*` spans → Langfuse. |
+| **Guardrails** | `guardrails/guards.py` | Input injection detection before the model, PII masking before the response. |
+| **Egress with SSRF defence** | `tools/web.py` | Domain allowlist (deny by default), DNS-resolved IP check, per-hop redirect revalidation, byte cap. Off unless configured. |
+| **Read-only mode** | `gateway/wiring.py` | `AGENT_READ_ONLY=true` removes write tools from the registry entirely — capability absent, not denied. |
+
+## Architecture
+
+```mermaid
+flowchart TB
+    subgraph Client
+        UI[Web console] & SDK[HTTP / SSE clients]
+    end
+    UI & SDK --> API
+
+    subgraph API[Transport · FastAPI]
+        direction LR
+        MW[request-id · access log · metrics] --> EP[/v1/chat · /v1/ask · /v1/tickets/]
+    end
+
+    API --> ORCH
+
+    subgraph ORCH[Orchestration · LangGraph]
+        REACT[create_agent · ReAct] -.->|interrupt| HITL[Ticket workflow · human approval]
+        CP[(checkpoint<br/>memory · sqlite · postgres)]
+        REACT --- CP
+    end
+
+    ORCH --> BUS{Tool bus}
+    BUS --> GW
+
+    subgraph GW[Governance gateway]
+        direction LR
+        RL[rate limit] --> PERM[permission] --> EXEC[execute] --> AUDIT[audit]
+    end
+
+    GW --> T1[fs tools]
+    GW --> T2[knowledge / memory]
+    GW --> T3[MCP servers]
+
+    ORCH --> ROUTER[Model router<br/>LiteLLM · fallback · retry]
+    ROUTER --> LLM[(DeepSeek · OpenAI-compatible)]
+
+    ORCH -.-> OBS[OTel traces · metrics · cost]
+    TESTS[Evaluation harness] -.->|gates CI| ORCH
+```
+
+The point of the layout: **orchestration decides, governance enforces**. The agent can ask for anything; only the gateway can do it.
+
+## Field notes: two bugs you will hit
+
+These are not tutorial bugs. Both only appear once an agent does *multi-step* work with a reasoning model, and both cost us a full day.
+
+### 1. `reasoning_content` must be passed back on tool-call turns
+
+DeepSeek V4.1-Flash returns `reasoning_content` alongside `content`. Its API requires that an assistant message carrying `tool_calls` **pass the reasoning back** on the next request:
+
+```
+The `reasoning_content` in the thinking mode must be passed back to the API.
+```
+
+LangChain's `ChatOpenAI` drops `additional_kwargs` when serialising tool-call messages, so the very first tool call succeeds and **the second model turn fails with 400**. Plain chat works fine, which is why a demo never catches it.
+
+Fix: [`router/deepseek.py`](agent_platform/router/deepseek.py) overrides `_get_request_payload` and re-attaches the field.
+
+### 2. One failed tool call bricks the whole thread, permanently
+
+OpenAI-compatible APIs require every `tool_call_id` to be answered by a `tool` message. If a tool raises and the exception propagates, the checkpoint is written with *N tool calls and N−1 results*. From then on **every** request on that thread fails with:
+
+```
+An assistant message with 'tool_calls' must be followed by tool messages...
+```
+
+The error never mentions the real cause, and it is sticky — the thread is dead forever.
+
+Fix, in two layers:
+1. All tool exceptions — including permission denials — are converted into structured results (`{"ok": false, "kind": "permission_denied", ...}`) so the model can explain the failure instead of the process dying. Governance still happens in the gateway; audit still records it.
+2. `_repair_dangling_tool_calls` backfills missing tool messages on the way out, so already-corrupted threads self-heal.
+
+Regression tests: [`tests/test_deepseek_payload.py`](tests/test_deepseek_payload.py).
+
+## API
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/healthz` | Liveness only — never touches downstream |
+| GET | `/readyz` | Concurrent dependency probes; any critical failure → 503 (drain traffic, don't restart) |
+| GET | `/metrics` | Prometheus text format, zero extra dependencies |
+| POST | `/v1/chat` | Stateful, multi-turn (checkpointed by `thread_id`) |
+| POST | `/v1/chat/stream` | SSE with typed events: `reasoning` · `delta` · `tool_call` · `tool_result` |
+| POST | `/v1/ask` | Stateless single-shot, eligible for semantic cache |
+| GET | `/v1/cost` | Per-model cost, tokens, cache hit rate |
+| POST | `/v1/tickets` | Start a human-approval workflow; `/{id}/resume` continues after `interrupt()` |
+| GET/DELETE | `/v1/cache` | Semantic cache stats / purge |
+| POST | `/mcp/fs/mcp` | Filesystem exposed as an MCP server (stateless Streamable HTTP) |
+| POST | `/v1/auth/dev-token` | **dev only** — this route is not registered outside `AGENT_ENV=dev` |
+
+```bash
+TOKEN=$(curl -s -X POST localhost:8000/v1/auth/dev-token -H 'content-type: application/json' -d '{}' | jq -r .token)
+curl -N -X POST localhost:8000/v1/chat/stream \
+  -H "authorization: Bearer $TOKEN" -H 'content-type: application/json' \
+  -d '{"message":"write hello to note.txt, then read it back"}'
+```
+
+```text
+data: {"type":"reasoning","text":"用户要求先写入..."}
+data: {"type":"tool_call","name":"write_file","args":""}
+data: {"type":"tool_result","name":"write_file","text":"/app/data/fs/note.txt"}
+data: {"type":"delta","text":"已写入","delta":"已写入"}
+data: [DONE]
+```
+
+## Why not just…
+
+| | Dify / Flowise | LangGraph template | This |
+|---|---|---|---|
+| Multi-step autonomous agent | Visual flows, limited | Yes | Yes |
+| Tool-level authorization | Workspace roles | Roll your own | Role→tool policy + audit on every call |
+| Durable human approval | Partial | `interrupt()` + your own saver | `interrupt()` + three saver backends, tested across restart |
+| Cost control | Usage dashboard | — | Hard cap, per-turn, returns 402 |
+| Failure containment | — | — | Tool errors become observations; threads self-heal |
+| Release gate | Manual | — | `pass^k` eval in CI, non-zero exit |
+
+Pick Dify if you want a visual builder. Pick this if you want to read, audit and own the runtime.
+
+## Deploy
+
+```bash
+# Single container (console included, no nginx)
+docker build -f deploy/Dockerfile -t agent-platform .
+
+# Full stack: Postgres 18 + pgvector, Redis 8, app
 docker compose up -d
-docker exec -it agent-ollama ollama pull bge-m3
-uv run python scripts/ingest.py --docs-dir examples/knowledge
-uv run python scripts/smoke_knowledge.py      # 验证知识/记忆（不依赖模型 key）
 ```
 
-## 目录结构
+Production knobs (all env vars, no code change):
 
-见 [PLAN.md](./PLAN.md) 第 4 节；架构映射见 [docs/architecture.md](./docs/architecture.md)；设计决策见 [docs/adr/](./docs/adr/)；演示脚本见 [docs/demo.md](./docs/demo.md)。
+| Variable | Default | Production |
+|---|---|---|
+| `AGENT_ENV` | `dev` | `prod` — refuses to boot on a demo JWT secret |
+| `AGENT_CHECKPOINT_BACKEND` | `sqlite` | `postgres` |
+| `AGENT_RATE_LIMIT_BACKEND` | `memory` | `redis` (Lua sliding window, degrades to local bucket instead of failing open) |
+| `AGENT_LLM_BACKEND` | `auto` | `deepseek` — fail loudly instead of silently mocking |
 
-## 质量门（当前状态）
+`/readyz` reports the resolved backends, so a misconfigured deployment is visible before it serves traffic.
+
+## Quality gates
 
 ```bash
-uv run ruff check .            # ✅ 全绿
-uv run mypy agent_platform     # ✅ strict 全绿（40 个源文件）
-uv run pytest -q               # ✅ 111 passed, 1 skipped
-uv run python scripts/eval.py  # ✅ golden 10/10 通过，均分 98.3
+make check     # ruff + mypy --strict + pytest
 ```
+
+`ruff` clean across 9 rule families · `mypy --strict` 54 files, 0 issues · 160 tests, 1 skipped (Postgres integration, needs Docker).
 
 ## Roadmap
 
-- Phase 0 ✅ 骨架 + 依赖 + CI + ADR + 模型冒烟
-- Phase 1 ✅ MCP 网关 + 工具 server + 安全加固（鉴权/权限/限流/审计/路径穿越）
-- Phase 2 ✅ LangGraph 编排 + 模型路由 + HITL；RAG（pgvector + Ollama，混合检索 + 引用溯源）
-- Phase 3 ✅ 评测进 CI（golden + LLM-as-judge）；可观测（OTel → Langfuse 自托管，no-op 降级）
-- Phase 4 ✅ 治理 + 护栏 + 成本追踪/限额；长期记忆（向量化、按用户分域）
-- Phase 5 ✅ SSE 流式 + 前端 + 部署（Dockerfile/CI）+ 架构/ADR/演示文档
+See [ROADMAP.md](ROADMAP.md). Next up: trajectory-level eval scoring, A2A interop, prompt-injection corpus, K8s manifests.
 
-> RAG / 可观测 / 长期记忆的代码已就绪并通过单测；运行需本地 Docker 拉起 pgvector + Ollama，
-> 步骤见 [docs/docker-setup.md](./docs/docker-setup.md)。
+## Contributing
+
+Issues and PRs welcome — start with [CONTRIBUTING.md](CONTRIBUTING.md). Good first issues are tagged [`good first issue`](../../labels/good%20first%20issue).
+
+## License
+
+MIT — see [LICENSE](LICENSE).

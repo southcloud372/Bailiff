@@ -35,6 +35,7 @@ class LLMResult(BaseModel):
     prompt_tokens: int = 0
     completion_tokens: int = 0
     total_tokens: int = 0
+    cached_tokens: int = 0
     cost: float = 0.0
 
 
@@ -83,15 +84,23 @@ class ModelRouter:
         usage = resp.usage
         prompt_tokens = int(usage.prompt_tokens or 0) if usage else 0
         completion_tokens = int(usage.completion_tokens or 0) if usage else 0
+        cached_tokens = 0
+        if usage is not None:
+            details = getattr(usage, "prompt_tokens_details", None)
+            if details is not None:
+                cached_tokens = int(getattr(details, "cached_tokens", 0) or 0)
         cost = estimate_cost(model, prompt_tokens, completion_tokens)
         if self._cost_tracker is not None:
-            self._cost_tracker.record(model, prompt_tokens, completion_tokens, cost)
+            self._cost_tracker.record(
+                model, prompt_tokens, completion_tokens, cost, cached_tokens
+            )
         return LLMResult(
             model=resp.model or model,
             content=content,
             prompt_tokens=prompt_tokens,
             completion_tokens=completion_tokens,
             total_tokens=prompt_tokens + completion_tokens,
+            cached_tokens=cached_tokens,
             cost=cost,
         )
 

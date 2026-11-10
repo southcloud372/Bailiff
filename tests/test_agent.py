@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 from typing import Any
 
@@ -8,7 +9,6 @@ from langchain_core.outputs import ChatGeneration, ChatResult
 
 from agent_platform.core.agent import build_agent, build_tools, principal_context
 from agent_platform.gateway.config import ModelSettings, Settings
-from agent_platform.gateway.errors import PermissionDenied
 from agent_platform.gateway.policy import Principal
 from agent_platform.gateway.wiring import build_platform
 from agent_platform.guardrails.guards import GuardViolation
@@ -61,11 +61,16 @@ async def test_build_tools_routes_through_gateway(tmp_path: Path) -> None:
         assert written.endswith("a.txt")
         assert await by_name["read_file"].ainvoke({"path": "a.txt"}) == "hi"
 
-    # 越权：guest 无 agent 角色，工具调用应被网关拒绝
+    # 越权：guest 无 agent 角色，工具调用被网关拒绝。
+    # 注意：拒绝**不抛异常**而是返回结构化错误结果——这是刻意的协议约束（见
+    # core/agent.py 里 _tool 的注释）：一旦抛异常导致 assistant 的 tool_calls
+    # 缺少对应 tool 消息，整条会话线程会永久 400。治理仍在网关执行，审计照常落库。
     guest = Principal(id="guest", roles=frozenset({"guest"}))
     with principal_context(guest):
-        with pytest.raises(PermissionDenied):
-            await by_name["read_file"].ainvoke({"path": "a.txt"})
+        denied = await by_name["read_file"].ainvoke({"path": "a.txt"})
+    payload = json.loads(denied)
+    assert payload["ok"] is False
+    assert payload["kind"] == "permission_denied"
 
 
 @pytest.mark.asyncio
@@ -90,7 +95,7 @@ async def test_agent_loop_with_fake_model(tmp_path: Path) -> None:
         ]
     )
     agent = build_agent(
-        ModelSettings(api_key="k", model="deepseek-chat"),
+        ModelSettings(api_key="k", model="deepseek-flash"),
         platform.gateway,
         model=model,
     )
@@ -108,7 +113,7 @@ async def test_agent_blocks_injection_before_model(tmp_path: Path) -> None:
     principal = Principal(id="agent", roles=frozenset({"agent"}))
     # 输入护栏在模型调用前拦截，模型无需真实执行
     agent = build_agent(
-        ModelSettings(api_key="k", model="deepseek-chat"),
+        ModelSettings(api_key="k", model="deepseek-flash"),
         platform.gateway,
         model=_ScriptedModel([AIMessage(content="不应到达")]),
     )
@@ -122,7 +127,7 @@ async def test_agent_streams_tokens(tmp_path: Path) -> None:
     platform = _platform(tmp_path)
     principal = Principal(id="agent", roles=frozenset({"agent"}))
     agent = build_agent(
-        ModelSettings(api_key="k", model="deepseek-chat"),
+        ModelSettings(api_key="k", model="deepseek-flash"),
         platform.gateway,
         model=_ScriptedModel([AIMessage(content="流式回复")]),
     )
@@ -138,7 +143,7 @@ async def test_agent_stream_blocks_injection_before_model(tmp_path: Path) -> Non
     platform = _platform(tmp_path)
     principal = Principal(id="agent", roles=frozenset({"agent"}))
     agent = build_agent(
-        ModelSettings(api_key="k", model="deepseek-chat"),
+        ModelSettings(api_key="k", model="deepseek-flash"),
         platform.gateway,
         model=_ScriptedModel([AIMessage(content="不应到达")]),
     )
@@ -153,9 +158,9 @@ async def test_agent_blocks_when_budget_exceeded(tmp_path: Path) -> None:
     principal = Principal(id="agent", roles=frozenset({"agent"}))
     # 预置一个已超预算的成本账本，验证模型调用前被拦截（不触达模型）
     tracker = CostTracker()
-    tracker.record("deepseek-chat", 1000, 1000, 2.0)
+    tracker.record("deepseek-flash", 1000, 1000, 2.0)
     agent = build_agent(
-        ModelSettings(api_key="k", model="deepseek-chat"),
+        ModelSettings(api_key="k", model="deepseek-flash"),
         platform.gateway,
         model=_ScriptedModel([AIMessage(content="不应到达")]),
         cost_tracker=tracker,
@@ -171,9 +176,9 @@ async def test_agent_stream_blocks_when_budget_exceeded(tmp_path: Path) -> None:
     platform = _platform(tmp_path)
     principal = Principal(id="agent", roles=frozenset({"agent"}))
     tracker = CostTracker()
-    tracker.record("deepseek-chat", 600, 400, 0.0)
+    tracker.record("deepseek-flash", 600, 400, 0.0)
     agent = build_agent(
-        ModelSettings(api_key="k", model="deepseek-chat"),
+        ModelSettings(api_key="k", model="deepseek-flash"),
         platform.gateway,
         model=_ScriptedModel([AIMessage(content="不应到达")]),
         cost_tracker=tracker,
@@ -189,7 +194,7 @@ async def test_agent_masks_sensitive_output(tmp_path: Path) -> None:
     platform = _platform(tmp_path)
     principal = Principal(id="agent", roles=frozenset({"agent"}))
     agent = build_agent(
-        ModelSettings(api_key="k", model="deepseek-chat"),
+        ModelSettings(api_key="k", model="deepseek-flash"),
         platform.gateway,
         model=_ScriptedModel([AIMessage(content="密钥 sk-abc123def456789012345678")]),
     )

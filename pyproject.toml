@@ -1,36 +1,62 @@
 [project]
 name = "agent-platform"
-version = "0.1.0"
+version = "0.2.0"
 description = "Enterprise multi-agent orchestration platform (campus recruitment flagship project)"
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.13"
 
+# 约束策略：**下限贴着当前稳定线，上限卡大版本**。
+# 只写 `>=x` 会让 resolver 在某天悄悄升到大版本（LangChain v0→v1 这类破坏性变更），
+# 只写 `==x` 又拿不到安全补丁。Agent 生态发版极快（LangGraph 一年内从 0.x 到 1.x），
+# 所以"锁小版本、放补丁"是唯一能长期维护的写法。
 dependencies = [
-    "langgraph>=1.0",
-    "langchain-openai>=0.3",
-    "litellm>=1.50",
-    "fastapi>=0.115",
-    "uvicorn[standard]>=0.30",
-    "sse-starlette>=2.0",
-    "pydantic>=2.8",
-    "pydantic-settings>=2.4",
-    "mcp>=1.0",
-    "httpx>=0.27",
+    "langgraph>=1.2,<2",
+    "langchain>=1.4.9,<2",
+    "langchain-core>=1.7,<2",
+    "langchain-openai>=1.7,<2",
+    "litellm>=1.108,<2",
+    "mcp>=2.3,<3",
+    "fastapi>=0.162,<1",
+    "uvicorn[standard]>=0.54,<1",
+    "sse-starlette>=3.7,<4",
+    "pydantic>=2.14,<3",
+    "pydantic-settings>=2.16,<3",
+    "httpx>=0.28,<1",
     "python-dotenv>=1.0",
-    "langchain>=1.4.0",
-    "psycopg[binary]>=3.1",
-    "pgvector>=0.3",
-    "opentelemetry-api>=1.25",
-    "opentelemetry-sdk>=1.25",
-    "opentelemetry-exporter-otlp-proto-http>=1.25",
+    "psycopg[binary]>=3.3,<4",
+    "pgvector>=0.5,<1",
+    "opentelemetry-api>=1.45,<2",
+    "opentelemetry-sdk>=1.45,<2",
+    "opentelemetry-exporter-otlp-proto-http>=1.45,<2",
+]
+
+[project.optional-dependencies]
+# 生产后端：Postgres checkpoint（多副本续跑）+ Redis（跨副本限流/缓存）。
+# 本地 clone 不需要装，`uv sync` 即可跑（SQLite + 内存限流）。
+prod = [
+    "langgraph-checkpoint-postgres>=3.2,<4",
+    "psycopg[pool]>=3.3,<4",
+    "redis>=8.1,<9",
+]
+# 评测门槛：CI 里跑 LLM-as-judge 回归。
+eval = ["deepeval>=4.3,<5"]
+# 代码沙箱：容器内执行模型生成的代码。
+sandbox = ["e2b>=2.63,<3"]
+# 跨组织 agent 互联（校招项目只做设计说明，真接入用这个 extra）。
+a2a = ["a2a-sdk>=1.3,<2"]
+# 可观测全家桶：OTel 自动埋点 + Langfuse（OTLP 摄入）。
+observability = [
+    "langfuse>=5.2,<6",
+    "opentelemetry-instrumentation-fastapi>=0.63,<1",
+    "opentelemetry-instrumentation-httpx>=0.63,<1",
 ]
 
 [dependency-groups]
 dev = [
-    "pytest>=8.0",
-    "pytest-asyncio>=0.24",
-    "ruff>=0.6",
-    "mypy>=1.11",
+    "pytest>=9.2,<10",
+    "pytest-asyncio>=1.4,<2",
+    "ruff>=0.17,<1",
+    "mypy>=2.4,<3",
 ]
 
 [build-system]
@@ -40,13 +66,41 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["agent_platform"]
 
+[tool.uv]
+default-groups = ["dev"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+filterwarnings = ["ignore::DeprecationWarning:langchain.*"]
+
 [tool.ruff]
 line-length = 100
-target-version = "py312"
+target-version = "py313"
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "UP", "B"]
+# ASYNC/S/RUF/PERF：Agent 项目里异步误用、安全兜底、性能退化是高发区。
+select = ["E", "F", "I", "UP", "B", "ASYNC", "S", "RUF", "PERF"]
+ignore = [
+    "S101",    # 测试里本来就用 assert
+    "RUF001",  # 中文全角标点在注释里是正常的
+    "RUF002",
+    "RUF003",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S105", "S106", "S311"]
+# 表名是模块级常量（不存在用户输入），SQL 里的表名插值不构成注入面。
+"agent_platform/knowledge/store.py" = ["S608"]
+"agent_platform/core/checkpoint.py" = ["S608"]
 
 [tool.mypy]
-python_version = "3.12"
+python_version = "3.13"
 strict = true
+plugins = ["pydantic.mypy"]
+warn_unreachable = true
+
+[[tool.mypy.overrides]]
+module = ["litellm.*", "mcp.*", "pgvector.*"]
+ignore_missing_imports = true

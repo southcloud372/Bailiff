@@ -1,43 +1,157 @@
-name: CI
+name: ci
 
 on:
   push:
-    branches: [main]
+    branches: [main, master]
   pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+# CI 不连真实基础设施：checkpoint 用内存、限流用进程内、缓存关闭。
+# 这样测试 15 秒内跑完，且不受外部服务抖动影响。
+env:
+  AGENT_CHECKPOINT_BACKEND: memory
+  AGENT_RATE_LIMIT_BACKEND: memory
+  AGENT_CACHE_ENABLED: "false"
 
 jobs:
   quality:
-    name: lint + type + test
+    name: lint · type · test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-      - run: uv sync --all-groups
-      - name: Ruff
-        run: uv run ruff check .
-      - name: mypy
-        run: uv run mypy agent_platform
-      - name: pytest
-        run: uv run pytest -q
 
-  # 评测回归：仅 main 推送触发，依赖 DEEPSEEK_API_KEY secret。
-  # 用真实模型跑 golden dataset + LLM-as-judge，非全绿即失败，守住质量底线。
-  eval:
-    name: golden-dataset eval
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          version: "latest"
+          enable-cache: true
+
+      # --frozen：锁文件与 pyproject 不一致时**直接失败**，而不是悄悄重新解析。
+      # 这是「本地能跑、CI 装出另一套版本」这类事故的唯一有效防线。
+      - name: Sync dependencies (frozen)
+        run: uv sync --frozen --extra prod
+
+      - name: Ruff (lint)
+        run: uv run ruff check .
+
+      - name: Mypy (strict)
+        run: uv run mypy agent_platform
+
+      - name: Pytest
+        run: uv run pytest -q --junitxml=report.xml
+
+      - name: Upload test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pytest-report
+          path: report.xml
+          if-no-files-found: ignore
+
+  console:
+    name: console build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Install
+        working-directory: web
+        run: npm ci --no-audit --no-fund
+      - name: Typecheck + build
+        working-directory: web
+        run: npm run build
+
+  # 「clone 即跑」是开源项目的生命线，必须有 CI 守着。
+  # 这一关**不需要任何 API Key**：模型层自动降级为离线演示模型，
+  # 但鉴权、就绪探针、SSE 流式、成本记账全部真实执行。
+  smoke:
+    name: smoke (offline, no key)
     runs-on: ubuntu-latest
     needs: quality
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    env:
+      AGENT_LLM_BACKEND: mock
+      AGENT_CHECKPOINT_BACKEND: memory
+      AGENT_RATE_LIMIT_BACKEND: memory
     steps:
       - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
-      - uses: actions/setup-python@v5
+      - uses: astral-sh/setup-uv@v6
         with:
-          python-version: "3.12"
-      - run: uv sync
-      - name: run eval
-        run: uv run python scripts/eval.py
-        env:
-          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          version: "latest"
+          enable-cache: true
+      - run: uv sync --frozen --extra prod
+      - name: Boot and exercise the full request path
+        run: |
+          set -euo pipefail
+          uv run python scripts/serve.py &
+          for _ in $(seq 1 40); do
+            curl -sf http://127.0.0.1:8000/healthz > /dev/null && break
+            sleep 1
+          done
+          echo "--- readyz ---"; curl -sf http://127.0.0.1:8000/readyz
+          TOKEN=$(curl -sf -X POST http://127.0.0.1:8000/v1/auth/dev-token \
+            -H 'content-type: application/json' -d '{}' \
+            | python -c "import sys,json;print(json.load(sys.stdin)['token'])")
+          echo "--- tools ---"
+          curl -sf http://127.0.0.1:8000/v1/tools -H "authorization: Bearer $TOKEN"
+          echo "--- chat ---"
+          curl -sf -X POST http://127.0.0.1:8000/v1/chat \
+            -H "authorization: Bearer $TOKEN" -H 'content-type: application/json' \
+            -d '{"message":"你好"}' | head -c 300
+          echo; echo "--- stream (first events) ---"
+          curl -sN -X POST http://127.0.0.1:8000/v1/chat/stream \
+            -H "authorization: Bearer $TOKEN" -H 'content-type: application/json' \
+            -d '{"message":"你好"}' | head -5
+
+  docker:
+    name: docker build
+    runs-on: ubuntu-latest
+    needs: [quality, console]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build image (no push)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/Dockerfile
+          push: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # 真机评测：只在配置了模型密钥时执行（fork / 无密钥自动跳过）。
+  # 「评测进 CI」的意义不是跑一次看分数，而是每次改动都守阈值——
+  # 改提示词/换模型/调温度导致的回归，单测永远发现不了。
+  eval:
+    name: agent eval (LLM-as-judge)
+    runs-on: ubuntu-latest
+    needs: quality
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'push'
+    env:
+      DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Skip when no API key
+        if: env.DEEPSEEK_API_KEY == ''
+        run: echo "DEEPSEEK_API_KEY 未配置，跳过真机评测（预期行为）。"
+
+      - uses: astral-sh/setup-uv@v6
+        if: env.DEEPSEEK_API_KEY != ''
+        with:
+          version: "latest"
+          enable-cache: true
+
+      - name: Run golden dataset
+        if: env.DEEPSEEK_API_KEY != ''
+        run: |
+          uv sync --frozen --extra prod
+          # threshold=80 卡质量，--trials 3 同时报告 pass@3（能力）与 pass^3（可靠性）
+          uv run python scripts/eval.py --threshold 80 --trials 3

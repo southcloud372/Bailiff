@@ -10,12 +10,14 @@
 | 接入层 | REST + SSE 流式 + 会话 | `agent_platform/api/app.py` |
 | 编排层 | 图状态机 + checkpoint + HITL | `agent_platform/core/agent.py`、`core/workflow.py` |
 | 治理层 | 鉴权 / 权限 / 审计 / 护栏 / 成本 | `agent_platform/gateway/`、`guardrails/`、`router/budget.py` |
-| 协议层 | MCP 网关（发现 / 白名单 / 限流 / 加固） | `agent_platform/gateway/gateway.py`、`tools/` |
+| 协议层 | MCP 网关（动态发现 / 命名空间 / 白名单 / 容错） | `agent_platform/gateway/mcp_client.py`、`tools/` |
 | 模型层 | 多供应商路由 + 成本追踪 | `agent_platform/router/llm.py`、`router/cost.py` |
-| 记忆层 | 工作记忆（checkpoint）/ 长期记忆（pgvector） | `core`（MemorySaver）+ 预留 `memory/` |
+| 记忆层 | 工作记忆（checkpoint 三级后端）/ 长期记忆（pgvector） | `core/checkpoint.py` + `memory/` |
 | 数据层 | PostgreSQL+pgvector / Redis | `docker-compose.yml`（Phase 0/2） |
 
-横切：评测（`evaluation/`）、可观测（`observability/`，Phase 3）、安全（`gateway/security.py`、`guardrails/`）。
+横切：评测（`evaluation/`）、可观测（`observability/`：指标 / trace / 就绪探针）、安全（`gateway/security.py`、`guardrails/`）。
+
+> 更完整的分层说明与逐模块精读见 [docs/learning/](./learning/README.md)。
 
 ## 关键数据流
 

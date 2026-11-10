@@ -1,38 +1,59 @@
-# 目标基础设施：PostgreSQL(pgvector) + Redis + Ollama（本地嵌入）
-# 用法：docker compose up -d  （详见 docs/docker-setup.md）
-# Langfuse（可观测）为可选组件，后续并入本文件或单独编排。
+# 本地/单机生产基础设施：PostgreSQL(pgvector) + Redis + Ollama（本地嵌入）
+#
+#   docker compose up -d                  # 起全部依赖
+#   docker compose --profile tools up -d  # 额外起 pgadmin（可选）
+#   docker compose down -v                # 连数据一起清掉
+#
+# 说明：
+# - PG 18 是当前生产主线；pgvector 镜像的 <pg18> tag 若在你的机器上不存在，
+#   把 image 改成 pgvector/pgvector:pg17（代码与扩展 API 完全兼容）。
+# - Redis 8 自带向量集；本项目只用它的限流/缓存/幂等能力，未强依赖向量特性。
+# - Langfuse 自托管是六件套（web/worker/PG/ClickHouse/Redis/S3），体量远超本文件，
+#   校招演示建议直接用 Cloud 免费层，只把 OTLP endpoint 指向它（见 docs/observability.md）。
+name: agent-platform
 
 services:
   db:
-    image: pgvector/pgvector:pg16
+    image: pgvector/pgvector:pg18
     container_name: agent-db
     environment:
       POSTGRES_USER: agent
       POSTGRES_PASSWORD: agent
       POSTGRES_DB: agent_platform
+      # 生产请改密码，并通过 secrets 注入；这里给本地开发用
+      POSTGRES_INITDB_ARGS: "--data-checksums"
     ports:
       - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
+      # 首次初始化时启用扩展（幂等）
+      - ./deploy/initdb:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U agent -d agent_platform"]
       interval: 5s
       timeout: 5s
       retries: 10
+      start_period: 10s
+    restart: unless-stopped
 
   redis:
-    image: redis:7-alpine
+    image: redis:8-alpine
     container_name: agent-redis
+    # 开 AOF：限流计数/缓存丢了会放大流量，值得付这点磁盘
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory-policy", "allkeys-lru"]
     ports:
       - "6379:6379"
+    volumes:
+      - redisdata:/data
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
-      timeout: 5s
+      timeout: 3s
       retries: 10
+    restart: unless-stopped
 
-  # 本地嵌入模型（OpenAI 兼容端点 /v1/embeddings），无外部 API key 依赖。
-  # 首次需手动拉取模型：docker exec -it agent-ollama ollama pull bge-m3
+  # 本地嵌入模型（OpenAI 兼容端点 /v1/embeddings），不依赖外部 API key。
+  # 首次需拉模型：docker exec -it agent-ollama ollama pull bge-m3
   ollama:
     image: ollama/ollama:latest
     container_name: agent-ollama
@@ -45,7 +66,9 @@ services:
       interval: 10s
       timeout: 5s
       retries: 10
+    restart: unless-stopped
 
 volumes:
   pgdata:
+  redisdata:
   ollama:

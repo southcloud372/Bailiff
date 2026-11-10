@@ -1,0 +1,21 @@
+# 构建上下文瘦身 + 防止密钥/缓存进入镜像
+.git
+.gitignore
+.venv
+__pycache__
+*.pyc
+.pytest_cache
+.mypy_cache
+.ruff_cache
+.env
+.env.*
+!.env.example
+data
+web/node_modules
+web/dist
+docs
+tests
+examples
+*.sqlite
+uv.lock.bak
+pyproject.toml.bak

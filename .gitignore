@@ -1,33 +1,124 @@
-# Environment / secrets
+# ─────────────────────────────────────────────────────────────────────────────
+# 这个文件的作用：保证「仓库里只有能公开的东西」。
+# 原则：默认忽略，需要公开时用 ! 显式放行——而不是反过来。
+# 检查某个文件到底会不会被上传：git check-ignore -v <路径>
+# ─────────────────────────────────────────────────────────────────────────────
+
+# ═══ 1. 密钥与凭证（最高优先级，一行都不能漏）═══════════════════════════════
 .env
 .env.*
 !.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+secrets/
+.secrets
+credentials.json
+service-account*.json
+# 常见云厂商凭证落盘位置（万一有人把家目录软链进仓库）
+.aws/
+.gcp/
+.azure/
+kubeconfig
+.kube/
 
-# Python
+# ═══ 2. 私人内容：求职、笔记、草稿（只给自己看）═══════════════════════════
+# 说明：这些目录**不应该**出现在公开仓库里。它们记录的是求职节奏、简历版本、
+# 个人复盘——对读者没有价值，对自己是隐私。
+agent求职/
+agent升级/
+私人/
+private/
+notes/
+简历/
+求职/
+*.local.md
+*.private.md
+*.draft.md
+
+# 个人环境相关的手册：含内网 IP / 本机路径 / VMware 拓扑，不适合公开
+docs/runbook.md
+docs/docker-setup.md
+PLAN.md
+
+# 若某天你决定把学习文档也私有化，取消下面这行的注释即可
+# （注意：README.md 里引用了 docs/learning/，取消后需要同步删掉那些链接）
+# docs/learning/
+
+# ═══ 3. 运行时产物：本地数据、状态、日志 ══════════════════════════════════
+data/
+*.sqlite
+*.sqlite3
+*.db
+*.db-wal
+*.db-shm
+*.log
+logs/
+audit/
+tmp/
+.cache/
+
+# 备份文件（uv/pyproject 之类手工备份，属于本地临时物）
+*.bak
+*.orig
+*.rej
+
+# ═══ 4. Python ═══════════════════════════════════════════════════════════
 __pycache__/
 *.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
 *.egg-info/
+.eggs/
 .venv/
 venv/
-dist/
-build/
+ENV/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
 .coverage
+.coverage.*
+coverage.xml
 htmlcov/
+.hypothesis/
+.tox/
+report.xml
 
-# Node / frontend
+# ═══ 5. Node / 前端 ══════════════════════════════════════════════════════
 node_modules/
 web/dist/
 web/.vite/
+npm-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.vite/
+*.tsbuildinfo
 
-# IDE / OS
+# ═══ 6. 工具与编辑器 ═════════════════════════════════════════════════════
 .idea/
 .vscode/
+!.vscode/extensions.json
 .DS_Store
 Thumbs.db
+desktop.ini
+*.swp
+*.swo
+*~
 
-# Local data
-*.log
-data/
+# ═══ 7. Agent 工作目录（含本地记忆，不进仓库）══════════════════════════════
+.workbuddy/
+.claude/
+.cursor/
+.aider*
+.playwright/
+playwright-report/
+test-results/
+
+# ═══ 8. 构建/部署本地残留 ════════════════════════════════════════════════
+.docker/
+*.tar.gz
+traefik/

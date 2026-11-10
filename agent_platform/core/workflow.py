@@ -19,13 +19,13 @@ from typing import Any, Literal, NotRequired, TypedDict, cast
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.runnables import RunnableConfig
-from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.types import Command, interrupt
 from pydantic import BaseModel, Field
 
 from agent_platform.core.agent import build_model, current_principal, principal_context
+from agent_platform.core.checkpoint import build_checkpointer
 from agent_platform.gateway.config import ModelSettings
 from agent_platform.gateway.gateway import Gateway
 from agent_platform.gateway.policy import Principal
@@ -155,8 +155,13 @@ def build_ticket_workflow(
     classify: ClassifyFn | None = None,
     answer: AnswerFn | None = None,
     cost_tracker: CostTracker | None = None,
+    checkpointer: Any | None = None,
 ) -> TicketWorkflow:
-    """组装工单审批图。测试可注入 classify/answer（无需真实模型）。"""
+    """组装工单审批图。测试可注入 classify/answer（无需真实模型）。
+
+    checkpointer 必须由调用方传入持久化后端：工单停在 ``interrupt()`` 等人审批，
+    人可能几小时后才点「同意」——用内存 saver 会因重启丢掉整个审批上下文。
+    """
     if classify is None:
         model = model or build_model(ModelSettings(), cost_tracker=cost_tracker)
         classify = _default_classify(model, sorted(gateway.tool_names()))
@@ -220,4 +225,10 @@ def build_ticket_workflow(
     graph.add_edge("execute", "answer")
     graph.add_edge("answer", END)
 
-    return TicketWorkflow(graph.compile(checkpointer=MemorySaver()))
+    return TicketWorkflow(
+        graph.compile(
+            checkpointer=checkpointer
+            if checkpointer is not None
+            else build_checkpointer("memory")
+        )
+    )

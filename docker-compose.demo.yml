@@ -1,0 +1,30 @@
+# 一条命令起一个可演示的实例，**不需要任何 API Key**。
+#
+#   docker compose -f docker-compose.demo.yml up --build
+#   open http://localhost:8000     # 点「演示登录」即可对话
+#
+# 无 Key 时模型自动降级为离线演示模型（确定性回复，走完整链路但不真推理）。
+# 想接真模型：在 .env 里填 DEEPSEEK_API_KEY 后重新 up 即可，代码零改动。
+services:
+  app:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile
+    image: agent-platform:demo
+    ports:
+      - "8000:8000"
+    environment:
+      AGENT_ENV: dev
+      AGENT_HOST: 0.0.0.0
+      AGENT_PORT: "8000"
+      # 演示态用 SQLite，进程重启不丢会话，也不需要起 Postgres
+      AGENT_CHECKPOINT_BACKEND: sqlite
+      AGENT_RATE_LIMIT_BACKEND: memory
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      AGENT_LLM_BACKEND: ${AGENT_LLM_BACKEND:-auto}
+    volumes:
+      - demo-data:/app/data
+    restart: unless-stopped
+
+volumes:
+  demo-data:
