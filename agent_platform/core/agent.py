@@ -136,9 +136,7 @@ def resolve_model_backend(settings: ModelSettings) -> str:
     return "deepseek" if settings.api_key else "mock"
 
 
-def build_model(
-    settings: ModelSettings, *, cost_tracker: CostTracker | None = None
-) -> BaseChatModel:
+def build_model(settings: ModelSettings) -> BaseChatModel:
     """构建 LangChain 聊天模型（OpenAI 兼容 → DeepSeek）。
 
     挂两个回调：计费（累计 token 与成本）与可观测（OTel span，未配置时 no-op）。
@@ -153,8 +151,6 @@ def build_model(
         return MockChatModel()
 
     callbacks: list[BaseCallbackHandler] = [TracingCallback()]
-    if cost_tracker is not None:
-        callbacks.append(CostCallbackHandler(cost_tracker))
     # 用 DeepSeekChatModel 而非裸 ChatOpenAI：思考模型的 reasoning_content
     # 必须在工具调用链里回传，否则第二轮必 400（详见 router/deepseek.py）。
     return DeepSeekChatModel(
@@ -162,6 +158,8 @@ def build_model(
         api_key=SecretStr(settings.api_key),
         base_url=settings.base_url,
         temperature=0.3,
+        timeout=settings.timeout_seconds,
+        max_retries=settings.max_retries,
         callbacks=callbacks,
     )
 
@@ -320,6 +318,13 @@ class Agent:
         self._cache = cache
         self._model_name = model_name
 
+    def _callbacks(self, principal: Principal) -> list[BaseCallbackHandler]:
+        """按请求构造回调。计费需要知道是谁在花钱，而身份在回调执行上下文里
+        不一定可见，所以显式传进去，而不是靠 contextvar 猜。"""
+        if self._cost_tracker is None:
+            return []
+        return [CostCallbackHandler(self._cost_tracker, principal_id=principal.id)]
+
     def _check_budget(self) -> None:
         """模型调用前检查预算：仅在同时配置了预算与成本追踪时生效。"""
         if self._budget is not None and self._cost_tracker is not None:
@@ -354,7 +359,10 @@ class Agent:
         with principal_context(principal):
             result = await self._graph.ainvoke(
                 {"messages": [HumanMessage(content=message)]},
-                config={"configurable": {"thread_id": thread_id}},
+                config={
+                    "configurable": {"thread_id": thread_id},
+                    "callbacks": self._callbacks(principal),
+                },
             )
         reply = self._output_guard.mask(str(result["messages"][-1].content))
 
@@ -413,7 +421,10 @@ class Agent:
         with principal_context(principal):
             async for chunk, _metadata in self._graph.astream(
                 {"messages": [HumanMessage(content=message)]},
-                config={"configurable": {"thread_id": thread_id}},
+                config={
+                    "configurable": {"thread_id": thread_id},
+                    "callbacks": self._callbacks(principal),
+                },
                 stream_mode="messages",
             ):
                 if isinstance(chunk, ToolMessage):
@@ -476,7 +487,7 @@ def build_agent(
     checkpointer：调用方传入（serve.py 按 ``RuntimeSettings`` 选择 sqlite/postgres）。
     不传时退化到进程内存，只适用于单测。
     """
-    model = model or build_model(settings, cost_tracker=cost_tracker)
+    model = model or build_model(settings)
     tools = build_tools(gateway)
     saver = checkpointer if checkpointer is not None else build_checkpointer("memory")
     graph = create_agent(model, tools, checkpointer=saver)

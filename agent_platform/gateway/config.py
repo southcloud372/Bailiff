@@ -67,6 +67,11 @@ class ModelSettings(BaseSettings):
         validation_alias=AliasChoices("AGENT_LLM_BACKEND", "DEEPSEEK_LLM_BACKEND"),
     )
 
+    # 单次模型调用超时。没有超时的话，上游卡住会把 worker 一直占着，
+    # 表现为「并发上不去」而不是报错，很难归因。
+    timeout_seconds: float = 60.0
+    max_retries: int = 1
+
     # 成本限额（token 经济学）：0 = 不限。
     cost_limit: float = 0.0
     token_limit: int = 0

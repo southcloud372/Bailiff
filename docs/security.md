@@ -61,6 +61,7 @@ Agent 系统的攻击面与传统 Web 不同：真正的风险不是 SQL 注入�
 | 会话（checkpoint） | 键为 `principal#thread_id`，别人的线程不在你的命名空间 |
 | 长期记忆 | 向量 metadata 带 `user_id`，检索时前置过滤 |
 | 知识库 | 按 `tenant`/`collection` 过滤（需部署方配置） |
+| 成本账本 | 按 principal 分桶，`/v1/cost` 只返回自己的用量 |
 
 **最容易漏的是第一个**：直接把客户端传来的 `thread_id` 当 checkpoint 键，猜中就能读走整段历史。
 

@@ -81,7 +81,9 @@ class CallRequest(BaseModel):
 class ChatRequest(BaseModel):
     """一次 Agent 对话请求。"""
 
-    message: str
+    # 上限 32000 字符：再大的输入会直接顶爆上下文并放大单次成本，
+    # 与其让模型截断，不如在入口明确拒绝（422），错误信息也可读。
+    message: str = Field(max_length=32000)
     # 可选会话 id：同一用户可以有多个并行会话（前端「新对话」按钮）。
     # 不传则退化为「一个用户一个会话」（旧行为）。
     thread_id: str | None = Field(default=None, max_length=64)
@@ -141,6 +143,16 @@ def default_readiness(platform: Platform) -> Readiness:
         )
         .add("auth", callable_probe(_auth_ok), critical=True)
     )
+
+
+class DevTokenRequest(BaseModel):
+    """演示登录的请求体。必须定义在模块级：定义在函数内部时，配合
+    ``from __future__ import annotations`` 会让 FastAPI 无法解析类型，
+    请求体被静默忽略，所有 token 都变成默认身份。
+    """
+
+    principal_id: str = Field(default="demo", max_length=64)
+    roles: list[str] = Field(default_factory=lambda: ["agent"])
 
 
 def _thread_key(principal: Principal, requested: str | None) -> str:
@@ -235,12 +247,6 @@ def create_app(
 
     if platform.settings.env == "dev":
 
-        class DevTokenRequest(BaseModel):
-            """演示登录：前端点一下就能拿到可用的 JWT。"""
-
-            principal_id: str = Field(default="demo", max_length=64)
-            roles: list[str] = Field(default_factory=lambda: ["agent"])
-
         @app.post("/v1/auth/dev-token")
         async def dev_token(payload: DevTokenRequest | None = None) -> dict[str, Any]:
             """**仅 dev 环境**签发演示 token，让控制台免去手工造 JWT。
@@ -287,7 +293,8 @@ def create_app(
         tracker = cast(CostTracker | None, request.app.state.cost_tracker)
         if tracker is None:
             raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "未配置成本追踪")
-        return tracker.summary().model_dump()
+        # 只返回调用方自己的账本，全局汇总不对外暴露。
+        return tracker.summary(principal.id).model_dump()
 
     @app.get("/v1/tools")
     async def list_tools(

@@ -22,6 +22,7 @@ from agent_platform.api.app import create_app, default_readiness
 from agent_platform.core.agent import build_agent
 from agent_platform.core.checkpoint import build_checkpointer
 from agent_platform.core.workflow import build_ticket_workflow
+from agent_platform.gateway.audit import JsonlAuditSink
 from agent_platform.gateway.config import KnowledgeSettings, ModelSettings, RuntimeSettings
 from agent_platform.gateway.mcp_client import MCPGateway, MCPServerSpec
 from agent_platform.gateway.policy import PermissionRule
@@ -166,7 +167,12 @@ def main() -> None:
     # ── MCP 网关（可选：外部 MCP server 由 AGENT_MCP_SERVERS 注入）───────────
     mcp_gateway = MCPGateway(_load_mcp_specs(os.environ.get("AGENT_MCP_SERVERS", "")))
 
+    # 审计落盘是可选的：不配就走进程内环形缓冲（最近 5000 条），配了则追加 JSONL。
+    audit_log = os.environ.get("AGENT_AUDIT_LOG", "").strip()
+    audit_sink = JsonlAuditSink(audit_log) if audit_log else None
+
     platform = build_platform(
+        audit_sink=audit_sink,
         extra_tools=knowledge_tools,
         extra_rules=[
             PermissionRule(tool=name, roles=frozenset({"agent"})) for name in knowledge_tools

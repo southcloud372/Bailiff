@@ -212,3 +212,21 @@ def test_thread_key_is_idempotent() -> None:
     # 未指定会话时沿用 principal.id（升级后旧历史可读）
     assert _thread_key(principal, None) == "alice"
     assert _thread_key(principal, "alice") == "alice"
+
+
+def test_dev_token_respects_requested_principal() -> None:
+    """演示登录必须按请求签名，而不是永远签成默认身份。
+
+    回归背景：该请求模型曾定义在 create_app 内部，配合延迟注解导致 FastAPI
+    解析不到类型、静默忽略请求体，所有 token 都变成 demo——多身份演示直接失效。
+    """
+    client = TestClient(create_app(build_platform(Settings(jwt_secret="x" * 40, env="dev"))))
+    res = client.post("/v1/auth/dev-token", json={"principal_id": "alice", "roles": ["guest"]})
+    assert res.status_code == 200
+    assert res.json()["principal_id"] == "alice"
+
+    from agent_platform.gateway.auth import TokenVerifier
+
+    principal = TokenVerifier("x" * 40).verify(res.json()["token"])
+    assert principal.id == "alice"
+    assert principal.roles == frozenset({"guest"})

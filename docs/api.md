@@ -138,6 +138,9 @@ curl -N -X POST localhost:8000/v1/chat/stream \
 
 ### GET /v1/cost
 
+返回**调用方自己的**累计花费。全局汇总不对外暴露：多租户下把它开放出去，
+等于让任何人看到其他人的用量与花费。
+
 ```json
 {
   "total_cost": 0.00016845,
@@ -223,6 +226,7 @@ npx @modelcontextprotocol/inspector   # 连 http://localhost:8000/mcp/fs/mcp
 | 400 | 请求体不合法 | 修参数 |
 | 401 | 缺 token / 签名错 / 过期 | 重新登录 |
 | 402 | 预算超限（`DEEPSEEK_COST_LIMIT`） | 提示用户或调高额度 |
+| 422 | 输入超长（> 32000 字符）或字段校验失败 | 截断后再发 |
 | 403 | 角色无权调用该工具 | 申请权限，不要重试 |
 | 404 | 路由不存在（含 prod 下的 dev-token） | 检查环境 |
 | 429 | 限流 | 退避重试（带 `Retry-After` 更佳） |

@@ -9,7 +9,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from agent_platform.gateway.audit import AuditLogger
+from agent_platform.gateway.audit import AuditLogger, AuditSink
 from agent_platform.gateway.auth import TokenVerifier
 from agent_platform.gateway.config import Settings
 from agent_platform.gateway.gateway import Gateway
@@ -61,6 +61,7 @@ def build_platform(
     extra_tools: dict[str, ToolFn] | None = None,
     extra_rules: list[PermissionRule] | None = None,
     rate_limiter: Limiter | None = None,
+    audit_sink: AuditSink | None = None,
 ) -> Platform:
     """组装一个完整的平台实例。
 
@@ -99,7 +100,7 @@ def build_platform(
     rules.extend(extra_rules or [])
     policy = PermissionPolicy(rules=rules)
 
-    audit = AuditLogger()
+    audit = AuditLogger(sink=audit_sink)
     limiter = rate_limiter or RateLimiter(
         capacity=settings.rate_limit_capacity,
         refill_per_second=settings.rate_limit_refill_per_second,

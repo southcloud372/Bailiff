@@ -357,10 +357,11 @@ async def test_cost_without_tracker_503(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
-async def test_cost_returns_summary(tmp_path: Path) -> None:
+async def test_cost_returns_callers_own_summary(tmp_path: Path) -> None:
     settings = Settings(jwt_secret=SECRET, fs_root=tmp_path)
     tracker = CostTracker()
-    tracker.record("m1", 10, 5, 0.001)
+    tracker.record("m1", 10, 5, 0.001, principal_id="u1")  # 与 _token 的默认身份一致
+    tracker.record("m1", 99, 99, 9.0, principal_id="someone-else")
     app = create_app(build_platform(settings), cost_tracker=tracker)
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://localhost:8000"
@@ -368,5 +369,7 @@ async def test_cost_returns_summary(tmp_path: Path) -> None:
         resp = await client.get("/v1/cost", headers=_auth())
         assert resp.status_code == 200
         body = resp.json()
+        # 只看到自己的花费：别人的 token 与金额不能出现在这里
         assert body["total_prompt_tokens"] == 10
+        assert body["total_cost"] == 0.001
         assert body["by_model"]["m1"]["completion_tokens"] == 5

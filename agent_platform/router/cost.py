@@ -19,6 +19,8 @@ from langchain_core.callbacks import BaseCallbackHandler
 from langchain_core.outputs import LLMResult
 from pydantic import BaseModel, Field
 
+from agent_platform.context import current_principal
+
 logger = logging.getLogger(__name__)
 
 
@@ -69,16 +71,72 @@ class CostSummary(BaseModel):
     by_model: dict[str, ModelCost] = Field(default_factory=dict)
 
 
+class _Bucket:
+    """一个维度的累计值（全局或单个调用方）。"""
+
+    __slots__ = ("by_model", "cached_tokens", "completion_tokens", "cost", "prompt_tokens")
+
+    def __init__(self) -> None:
+        self.cost = 0.0
+        self.prompt_tokens = 0
+        self.completion_tokens = 0
+        self.cached_tokens = 0
+        self.by_model: dict[str, ModelCost] = {}
+
+    def add(
+        self,
+        model: str,
+        prompt_tokens: int,
+        completion_tokens: int,
+        cost: float,
+        cached_tokens: int,
+    ) -> None:
+        self.cost += cost
+        self.prompt_tokens += prompt_tokens
+        self.completion_tokens += completion_tokens
+        self.cached_tokens += cached_tokens
+        entry = self.by_model.setdefault(model, ModelCost())
+        entry.cost += cost
+        entry.prompt_tokens += prompt_tokens
+        entry.completion_tokens += completion_tokens
+        entry.cached_tokens += cached_tokens
+
+    def merge_into(self, other: _Bucket) -> None:
+        other.cost += self.cost
+        other.prompt_tokens += self.prompt_tokens
+        other.completion_tokens += self.completion_tokens
+        other.cached_tokens += self.cached_tokens
+        for name, entry in self.by_model.items():
+            target = other.by_model.setdefault(name, ModelCost())
+            target.cost += entry.cost
+            target.prompt_tokens += entry.prompt_tokens
+            target.completion_tokens += entry.completion_tokens
+            target.cached_tokens += entry.cached_tokens
+
+    def to_summary(self) -> CostSummary:
+        hit_rate = (
+            round(self.cached_tokens / self.prompt_tokens, 4) if self.prompt_tokens else 0.0
+        )
+        return CostSummary(
+            total_cost=self.cost,
+            total_prompt_tokens=self.prompt_tokens,
+            total_completion_tokens=self.completion_tokens,
+            total_cached_tokens=self.cached_tokens,
+            cache_hit_rate=hit_rate,
+            by_model={k: v.model_copy() for k, v in self.by_model.items()},
+        )
+
+
 class CostTracker:
-    """线程安全的成本累加器。"""
+    """线程安全的成本累加器，按调用方分桶。
+
+    分桶不是可选项：只有全局账本时，任何登录用户查询 /v1/cost 都能看到所有人的
+    累计花费，多租户下这是数据泄露。全局汇总仅保留给内部与运维使用。
+    """
 
     def __init__(self) -> None:
         self._lock = threading.Lock()
-        self._total_cost = 0.0
-        self._prompt_tokens = 0
-        self._completion_tokens = 0
-        self._cached_tokens = 0
-        self._by_model: dict[str, ModelCost] = {}
+        self._buckets: dict[str, _Bucket] = {}
 
     def record(
         self,
@@ -87,33 +145,21 @@ class CostTracker:
         completion_tokens: int,
         cost: float,
         cached_tokens: int = 0,
+        principal_id: str = "",
     ) -> None:
         with self._lock:
-            self._total_cost += cost
-            self._prompt_tokens += prompt_tokens
-            self._completion_tokens += completion_tokens
-            self._cached_tokens += cached_tokens
-            entry = self._by_model.setdefault(model, ModelCost())
-            entry.cost += cost
-            entry.prompt_tokens += prompt_tokens
-            entry.completion_tokens += completion_tokens
-            entry.cached_tokens += cached_tokens
+            bucket = self._buckets.setdefault(principal_id, _Bucket())
+            bucket.add(model, prompt_tokens, completion_tokens, cost, cached_tokens)
 
-    def summary(self) -> CostSummary:
+    def summary(self, principal_id: str | None = None) -> CostSummary:
+        """传 principal_id 返回该调用方的账本；为空返回全局汇总。"""
         with self._lock:
-            cache_hit_rate = (
-                round(self._cached_tokens / self._prompt_tokens, 4)
-                if self._prompt_tokens
-                else 0.0
-            )
-            return CostSummary(
-                total_cost=self._total_cost,
-                total_prompt_tokens=self._prompt_tokens,
-                total_completion_tokens=self._completion_tokens,
-                total_cached_tokens=self._cached_tokens,
-                cache_hit_rate=cache_hit_rate,
-                by_model={k: v.model_copy() for k, v in self._by_model.items()},
-            )
+            if principal_id is not None:
+                return (self._buckets.get(principal_id) or _Bucket()).to_summary()
+            merged = _Bucket()
+            for bucket in self._buckets.values():
+                bucket.merge_into(merged)
+            return merged.to_summary()
 
 
 class CostCallbackHandler(BaseCallbackHandler):
@@ -122,8 +168,11 @@ class CostCallbackHandler(BaseCallbackHandler):
     挂到 ChatOpenAI 的 callbacks 上，Agent/工作流里所有模型调用都会被计费。
     """
 
-    def __init__(self, tracker: CostTracker) -> None:
+    def __init__(self, tracker: CostTracker, principal_id: str | None = None) -> None:
         self._tracker = tracker
+        # 显式传入优先。不要只依赖 contextvar：LangChain 的同步回调可能在其他
+        # 执行上下文里被调用，contextvar 在那里不可见，成本会被记到空桶上。
+        self._principal_id = principal_id
 
     def on_llm_end(self, response: LLMResult, **kwargs: Any) -> None:
         llm_output = response.llm_output or {}
@@ -134,10 +183,17 @@ class CostCallbackHandler(BaseCallbackHandler):
         prompt_tokens = int(usage.get("prompt_tokens") or 0)
         completion_tokens = int(usage.get("completion_tokens") or 0)
         cached_tokens = self._cached_tokens_from(usage)
+        principal_id = self._principal_id
+        if principal_id is None:
+            principal = current_principal.get()
+            principal_id = principal.id if principal is not None else ""
         self._tracker.record(
-            model, prompt_tokens, completion_tokens,
+            model,
+            prompt_tokens,
+            completion_tokens,
             estimate_cost(model, prompt_tokens, completion_tokens),
             cached_tokens,
+            principal_id=principal_id,
         )
 
     @staticmethod

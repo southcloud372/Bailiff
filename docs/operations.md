@@ -32,6 +32,8 @@
 | `AGENT_READ_ONLY` | `false` | 演示环境 `true` | 未开时公网实例可被当免费网盘 |
 | `AGENT_HTTP_ALLOWED_HOSTS` | 空 | 按需最小集 | 留空 = 不出网；填过宽 = SSRF 面变大 |
 | `AGENT_RAG_BACKEND` | `auto`（本地） | `postgres` | 留在本地时多副本各有一份索引，检索结果不一致 |
+| `AGENT_AUDIT_LOG` | 空（仅内存环形缓冲） | 挂卷路径 | 不落盘时进程退出即丢审计，不满足合规追溯 |
+| `DEEPSEEK_TIMEOUT_SECONDS` | 60 | 30–120 | 不设超时时上游卡住会占满 worker，表现为「并发上不去」 |
 | `DEEPSEEK_COST_LIMIT` | 0（不限） | 按租户设 | 不设限额时一个循环能把账单跑穿 |
 
 ## 三、探针与流量
@@ -144,3 +146,5 @@ make check
 | `chat_stream_failed` | 流式生成异常中断，带堆栈 |
 | `checkpoint_setup_failed` | Postgres 建表失败（多副本下会导致状态不一致，需立即处理） |
 | `cost_lookup_failed` | 价格表里找不到模型 → 成本恒为 0，是**最难发现的成本事故** |
+
+审计事件另有一套出口：设了 `AGENT_AUDIT_LOG` 时按 JSONL 追加，可直接接 Filebeat / Vector。进程内只保留最近 5000 条，供快速排查，不作为留存依据。

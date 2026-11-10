@@ -7,6 +7,9 @@ versioning follows [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- `AGENT_AUDIT_LOG`: append audit events as JSONL for log shippers, so audit survives restarts.
+- Input cap of 32000 characters on chat messages (422 instead of an opaque context overflow).
+- `DEEPSEEK_TIMEOUT_SECONDS` / `DEEPSEEK_MAX_RETRIES`, so a stalled upstream cannot pin workers.
 - **Zero-dependency retrieval backend** (`knowledge/local.py`, `knowledge/factory.py`,
   `scripts/ingest.py`): SQLite vector store plus a deterministic hashing embedder, so RAG works
   without pgvector or an embedding service. `AGENT_RAG_BACKEND=postgres` switches back to the
@@ -35,6 +38,16 @@ versioning follows [Semantic Versioning](https://semver.org/).
 - `Makefile`, `docker-compose.demo.yml`, single-command demo.
 
 ### Fixed
+- **Dev login issued the wrong identity.** `DevTokenRequest` was declared inside `create_app`,
+  and with postponed annotations FastAPI could not resolve it, so the request body was silently
+  ignored and every token was minted as `demo`. Multi-tenant demos were effectively impossible.
+- **`/v1/cost` exposed the global ledger.** Any authenticated caller could read everyone's spend
+  and token usage. Cost is now bucketed per principal; the global view is internal only.
+- **Audit log grew without bound in memory.** A plain list held every tool call since start,
+  which is a slow OOM. Now a bounded ring buffer (5000) plus an optional JSONL sink.
+- **Cost was attributed to an empty bucket** because the callback read the principal from a
+  contextvar that is not visible in LangChain's callback execution context. Attribution now
+  passes the principal explicitly per request.
 - **Reasoning models broke on the second model turn.** `reasoning_content` is now passed back on
   assistant messages carrying `tool_calls`; LangChain's `ChatOpenAI` drops it, which made every
   multi-step tool task fail with HTTP 400. See `router/deepseek.py`.

@@ -16,6 +16,7 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable
 from typing import Any, Literal, NotRequired, TypedDict, cast
 
+from langchain_core.callbacks import BaseCallbackHandler
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.runnables import RunnableConfig
@@ -29,7 +30,7 @@ from agent_platform.core.checkpoint import build_checkpointer
 from agent_platform.gateway.config import ModelSettings
 from agent_platform.gateway.gateway import Gateway
 from agent_platform.gateway.policy import Principal
-from agent_platform.router.cost import CostTracker
+from agent_platform.router.cost import CostCallbackHandler, CostTracker
 
 
 class ClassifyResult(BaseModel):
@@ -108,14 +109,23 @@ def _default_answer(model: BaseChatModel) -> AnswerFn:
 class TicketWorkflow:
     """对编译好的工单审批图的高层封装。"""
 
-    def __init__(self, graph: CompiledStateGraph[Any, Any, Any, Any]) -> None:
+    def __init__(
+        self,
+        graph: CompiledStateGraph[Any, Any, Any, Any],
+        *,
+        cost_tracker: CostTracker | None = None,
+    ) -> None:
         self._graph = graph
+        self._cost_tracker = cost_tracker
 
     async def start(
         self, request: str, *, principal: Principal, thread_id: str
     ) -> TicketRun:
         """发起工单；敏感操作会停在审批节点（status=interrupted）。"""
-        config: RunnableConfig = {"configurable": {"thread_id": thread_id}}
+        config: RunnableConfig = {
+            "configurable": {"thread_id": thread_id},
+            "callbacks": _cost_callbacks(self._cost_tracker, principal),
+        }
         with principal_context(principal):
             result = await self._graph.ainvoke({"request": request}, config)
         return _to_run(result, thread_id)
@@ -129,12 +139,23 @@ class TicketWorkflow:
         note: str = "",
     ) -> TicketRun:
         """以审批意见恢复被暂停的工单。"""
-        config: RunnableConfig = {"configurable": {"thread_id": thread_id}}
+        config: RunnableConfig = {
+            "configurable": {"thread_id": thread_id},
+            "callbacks": _cost_callbacks(self._cost_tracker, principal),
+        }
         with principal_context(principal):
             result = await self._graph.ainvoke(
                 Command(resume={"approve": approve, "note": note}), config
             )
         return _to_run(result, thread_id)
+
+
+def _cost_callbacks(
+    tracker: CostTracker | None, principal: Principal
+) -> list[BaseCallbackHandler]:
+    if tracker is None:
+        return []
+    return [CostCallbackHandler(tracker, principal_id=principal.id)]
 
 
 def _to_run(result: dict[str, Any], thread_id: str) -> TicketRun:
@@ -163,10 +184,10 @@ def build_ticket_workflow(
     人可能几小时后才点「同意」，用内存 saver 会因重启丢掉整个审批上下文。
     """
     if classify is None:
-        model = model or build_model(ModelSettings(), cost_tracker=cost_tracker)
+        model = model or build_model(ModelSettings())
         classify = _default_classify(model, sorted(gateway.tool_names()))
     if answer is None:
-        model = model or build_model(ModelSettings(), cost_tracker=cost_tracker)
+        model = model or build_model(ModelSettings())
         answer = _default_answer(model)
 
     async def classify_node(state: TicketState) -> dict[str, Any]:
