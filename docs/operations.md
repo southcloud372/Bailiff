@@ -67,7 +67,38 @@ tar czf fs.tar.gz -C data/fs .
 
 **SQLite 形态的备份**用 `sqlite3 db ".backup out.sqlite"`，不要直接 `cp`，运行中拷贝可能拿到撕裂的快照。
 
-## 五、升级
+## 五、会话保留
+
+checkpoint 会随对话无限增长，必须有清理策略，否则半年后 `data/` 会是几十 GB。
+
+```bash
+make prune           # 预演：列出 30 天未活动的会话
+make prune-apply     # 真删（不可恢复）
+uv run python scripts/prune.py --days 7 --apply
+```
+
+默认只预演、必须显式 `--apply`：清理通常跑在定时任务里，误删当场没人会发现。
+
+两条注意：
+
+- **工单库（`tickets.sqlite`）里可能有等待人工审批的中断状态**，删掉等于清空审批队列。
+  对它可以设更长的保留期，或在确认无待审批后再清理。
+- 保留期要覆盖业务现实：财务类会话往往要求留 180 天以上，别照抄 30 天。
+
+定时任务示例（每天凌晨 3 点）：
+
+```cron
+0 3 * * * cd /srv/bailiff && uv run python scripts/prune.py --days 30 --apply >> /var/log/bailiff-prune.log 2>&1
+```
+
+Postgres 后端对应的 SQL 更直接：
+
+```sql
+DELETE FROM checkpoints WHERE updated_at < extract(epoch from now()) - 30*86400;
+-- checkpoint_writes / checkpoint_blobs 按 thread_id 关联删除
+```
+
+## 六、升级
 
 ```bash
 # 1. 先看会变什么

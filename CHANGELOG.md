@@ -7,6 +7,12 @@ versioning follows [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **Idempotent writes.** `Idempotency-Key` on `/v1/chat` and `/v1/call`: a retried request
+  replays the stored response (`Idempotent-Replay: true`) instead of running the tool twice;
+  the same key with a different body returns 409. Keys are scoped per principal, TTL 10 min.
+- **Session retention.** Checkpoints now carry `updated_at` (with an ALTER-based migration for
+  existing databases), plus `scripts/prune.py` / `make prune` to drop threads idle beyond a
+  cutoff. Dry-run is the default because deletion is unrecoverable and usually runs from cron.
 - `AGENT_AUDIT_LOG`: append audit events as JSONL for log shippers, so audit survives restarts.
 - Input cap of 32000 characters on chat messages (422 instead of an opaque context overflow).
 - `DEEPSEEK_TIMEOUT_SECONDS` / `DEEPSEEK_MAX_RETRIES`, so a stalled upstream cannot pin workers.

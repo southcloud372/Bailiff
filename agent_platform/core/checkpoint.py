@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import sqlite3
 import threading
+import time
 from collections.abc import Iterator, Sequence
 from pathlib import Path
 from types import TracebackType
@@ -37,6 +38,7 @@ CREATE TABLE IF NOT EXISTS checkpoints (
     checkpoint_blob      BLOB NOT NULL,
     metadata_type        TEXT NOT NULL,
     metadata_blob        BLOB NOT NULL,
+    updated_at           REAL NOT NULL DEFAULT 0,
     PRIMARY KEY (thread_id, checkpoint_ns, checkpoint_id)
 );
 CREATE TABLE IF NOT EXISTS checkpoint_writes (
@@ -77,6 +79,7 @@ class SqliteCheckpointSaver(InMemorySaver):
         self._conn.execute("PRAGMA journal_mode=WAL")
         self._conn.execute("PRAGMA synchronous=NORMAL")
         self._conn.executescript(_SCHEMA)
+        self._migrate()
         self._conn.commit()
         self._db_lock = threading.Lock()
         self._loaded_threads: set[str] = set()
@@ -189,13 +192,15 @@ class SqliteCheckpointSaver(InMemorySaver):
             self._conn.execute(
                 "INSERT INTO checkpoints (thread_id, checkpoint_ns, checkpoint_id, "
                 "parent_checkpoint_id, checkpoint_type, checkpoint_blob, "
-                "metadata_type, metadata_blob) VALUES (?, ?, ?, ?, ?, ?, ?, ?) "
+                "metadata_type, metadata_blob, updated_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) "
                 "ON CONFLICT(thread_id, checkpoint_ns, checkpoint_id) DO UPDATE SET "
                 "parent_checkpoint_id=excluded.parent_checkpoint_id, "
                 "checkpoint_type=excluded.checkpoint_type, "
                 "checkpoint_blob=excluded.checkpoint_blob, "
                 "metadata_type=excluded.metadata_type, "
-                "metadata_blob=excluded.metadata_blob",
+                "metadata_blob=excluded.metadata_blob, "
+                "updated_at=excluded.updated_at",
                 (
                     thread_id,
                     checkpoint_ns,
@@ -205,6 +210,7 @@ class SqliteCheckpointSaver(InMemorySaver):
                     cp_blob,
                     md_type,
                     md_blob,
+                    time.time(),
                 ),
             )
             for channel, version in new_versions.items():
@@ -267,6 +273,51 @@ class SqliteCheckpointSaver(InMemorySaver):
                     ),
                 )
             self._conn.commit()
+
+    def _migrate(self) -> None:
+        """给早期库补 updated_at 列。SQLite 不支持 IF NOT EXISTS，只能先查。"""
+        columns = {
+            row[1] for row in self._conn.execute("PRAGMA table_info(checkpoints)")
+        }
+        if "updated_at" not in columns:
+            self._conn.execute(
+                "ALTER TABLE checkpoints ADD COLUMN updated_at REAL NOT NULL DEFAULT 0"
+            )
+            # 存量数据没有时间戳，用当前时间兜底，避免下一次清理直接把它们全删了
+            self._conn.execute(
+                "UPDATE checkpoints SET updated_at = ? WHERE updated_at = 0",
+                (time.time(),),
+            )
+        # 索引放在补列之后建，否则老库会在建索引时报 "no such column"
+        self._conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_checkpoints_updated "
+            "ON checkpoints (thread_id, updated_at DESC)"
+        )
+
+    def thread_stats(self, limit: int = 50) -> Sequence[tuple[str, float, int]]:
+        """返回 (thread_id, 最后更新时间戳, checkpoint 数)，按时间倒序。"""
+        with self._db_lock:
+            rows = self._conn.execute(
+                "SELECT thread_id, MAX(updated_at) AS ts, COUNT(*) AS n "
+                "FROM checkpoints GROUP BY thread_id ORDER BY ts DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+        return [(str(r[0]), float(r[1] or 0.0), int(r[2])) for r in rows]
+
+    def prune_threads(self, *, older_than: float, dry_run: bool = False) -> Sequence[str]:
+        """删除 ``older_than``（时间戳）之前再无写入的线程，返回被删的 thread_id。"""
+        with self._db_lock:
+            rows = self._conn.execute(
+                "SELECT thread_id, MAX(updated_at) FROM checkpoints "
+                "GROUP BY thread_id HAVING MAX(updated_at) < ?",
+                (older_than,),
+            ).fetchall()
+        stale = [str(r[0]) for r in rows]
+        if dry_run:
+            return stale
+        for thread_id in stale:
+            self.delete_thread(thread_id)
+        return stale
 
     def delete_thread(self, thread_id: str) -> None:
         super().delete_thread(thread_id)

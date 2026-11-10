@@ -44,6 +44,12 @@ typecheck: ## mypy strict 类型检查
 
 check: lint typecheck test ## 提交前跑这一条（CI 同款）
 
+prune: ## 预演：列出超过 30 天未活动的会话
+	$(PY) scripts/prune.py
+
+prune-apply: ## 真正删除过期会话（不可恢复）
+	$(PY) scripts/prune.py --apply
+
 eval: ## 跑评测集（需要 API Key）
 	$(PY) scripts/eval.py
 

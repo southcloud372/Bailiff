@@ -35,6 +35,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
+from agent_platform.api.idempotency import IdempotencyConflict, IdempotencyStore
 from agent_platform.api.middleware import RequestContextMiddleware
 from agent_platform.core.workflow import TicketWorkflow
 from agent_platform.gateway.auth import AuthenticationError, encode_token
@@ -238,6 +239,10 @@ def create_app(
     app.state.cost_tracker = cost_tracker
     app.state.readiness = readiness or default_readiness(platform)
     app.state.cache = cache
+    app.state.idempotency = IdempotencyStore(
+        ttl_seconds=platform.settings.idempotency_ttl_seconds,
+        max_entries=platform.settings.idempotency_max_entries,
+    )
     app.mount("/mcp/fs", mcp_app)
 
     @app.get("/healthz")
@@ -303,12 +308,30 @@ def create_app(
     ) -> dict[str, list[str]]:
         return {"tools": sorted(_platform(request).registry.names())}
 
-    @app.post("/v1/call")
+    @app.post("/v1/call", response_model=None)
     async def call(
         request: Request,
         payload: CallRequest,
         principal: Annotated[Principal, Depends(_get_principal)],
-    ) -> dict[str, Any]:
+    ) -> dict[str, Any] | Response:
+        idem = cast(IdempotencyStore, request.app.state.idempotency)
+        key = request.headers.get("Idempotency-Key", "").strip()
+        digest = IdempotencyStore.digest(payload.model_dump())
+        scope = f"{principal.id}:/v1/call"
+        if key:
+            try:
+                replay = idem.lookup(scope, key, digest)
+            except IdempotencyConflict as exc:
+                raise HTTPException(
+                    status.HTTP_409_CONFLICT,
+                    "同一个 Idempotency-Key 被用于不同内容的请求",
+                ) from exc
+            if replay is not None:
+                return JSONResponse(
+                    replay.body, status_code=replay.status_code,
+                    headers={"Idempotent-Replay": "true"},
+                )
+
         try:
             result = await _platform(request).gateway.call(
                 principal, payload.tool, payload.arguments
@@ -327,18 +350,40 @@ def create_app(
             raise HTTPException(status.HTTP_404_NOT_FOUND, str(exc)) from exc
         except SandboxViolation as exc:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, f"沙箱违规: {exc}") from exc
-        return {"result": result}
+        body = {"result": result}
+        if key:
+            idem.remember(scope, key, digest, 200, body)
+        return body
 
-    @app.post("/v1/chat")
+    @app.post("/v1/chat", response_model=None)
     async def chat(
         request: Request,
         payload: ChatRequest,
         principal: Annotated[Principal, Depends(_get_principal)],
-    ) -> dict[str, str]:
+    ) -> dict[str, str] | Response:
         agent_obj = cast(ChatAgent | None, request.app.state.agent)
         if agent_obj is None:
             raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "未配置模型")
-        # thread_id 用用户 id，使同一用户的对话保持上下文连续性（checkpoint 按 thread 分片）
+
+        idem = cast(IdempotencyStore, request.app.state.idempotency)
+        key = request.headers.get("Idempotency-Key", "").strip()
+        digest = IdempotencyStore.digest(payload.model_dump())
+        scope = f"{principal.id}:/v1/chat"
+        if key:
+            try:
+                replay = idem.lookup(scope, key, digest)
+            except IdempotencyConflict as exc:
+                raise HTTPException(
+                    status.HTTP_409_CONFLICT,
+                    "同一个 Idempotency-Key 被用于不同内容的请求",
+                ) from exc
+            if replay is not None:
+                return JSONResponse(
+                    replay.body, status_code=replay.status_code,
+                    headers={"Idempotent-Replay": "true"},
+                )
+
+        # thread_id 带用户命名空间，同一用户的会话按 thread 分片
         try:
             reply = await agent_obj.chat(
                 payload.message,
@@ -349,7 +394,10 @@ def create_app(
             raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
         except BudgetExceeded as exc:
             raise HTTPException(status.HTTP_402_PAYMENT_REQUIRED, str(exc)) from exc
-        return {"reply": reply}
+        body = {"reply": reply}
+        if key:
+            idem.remember(scope, key, digest, 200, body)
+        return body
 
     @app.post("/v1/ask")
     async def ask(

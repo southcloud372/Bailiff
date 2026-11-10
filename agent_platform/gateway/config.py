@@ -30,6 +30,11 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     token_ttl_seconds: int = 3600
 
+    # 幂等记录：同一 Idempotency-Key 的重试直接回放上次结果，避免重复副作用。
+    # 进程内实现，多副本需要换成 Redis 才能跨副本生效。
+    idempotency_ttl_seconds: float = 600.0
+    idempotency_max_entries: int = 2048
+
     rate_limit_capacity: int = 100
     rate_limit_refill_per_second: float = 10.0
 

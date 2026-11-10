@@ -66,6 +66,24 @@ Prometheus 文本格式。零额外依赖（自己实现的文本渲染，不引
 
 ---
 
+## 幂等
+
+写操作支持 `Idempotency-Key` 请求头。客户端为每个**逻辑操作**生成一个 key，
+网络超时或用户连点时复用同一个 key：
+
+```bash
+curl -X POST /v1/chat -H "Idempotency-Key: 7f3a..." -d '{"message":"写文件"}'
+```
+
+| 情况 | 行为 |
+|---|---|
+| 首次请求 | 正常执行，响应被记录（默认 10 分钟） |
+| 同 key、同请求体 | 直接回放上次响应，带 `Idempotent-Replay: true`，**不会执行第二次** |
+| 同 key、不同请求体 | `409`，说明客户端复用了错误的 key |
+
+作用范围：`/v1/chat`、`/v1/call`。key 按 principal 隔离，不同用户用同一个 key 互不影响。
+记录保存在进程内，多副本部署时需要换成 Redis 才能跨副本生效。
+
 ## 对话
 
 ### POST /v1/chat
@@ -226,6 +244,7 @@ npx @modelcontextprotocol/inspector   # 连 http://localhost:8000/mcp/fs/mcp
 | 400 | 请求体不合法 | 修参数 |
 | 401 | 缺 token / 签名错 / 过期 | 重新登录 |
 | 402 | 预算超限（`DEEPSEEK_COST_LIMIT`） | 提示用户或调高额度 |
+| 409 | 同一 `Idempotency-Key` 被用于不同请求体 | 换一个 key，不要复用 |
 | 422 | 输入超长（> 32000 字符）或字段校验失败 | 截断后再发 |
 | 403 | 角色无权调用该工具 | 申请权限，不要重试 |
 | 404 | 路由不存在（含 prod 下的 dev-token） | 检查环境 |
