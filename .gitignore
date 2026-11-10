@@ -42,6 +42,12 @@ docs/runbook.md
 docs/docker-setup.md
 PLAN.md
 
+# 个人学习与策略材料：只给自己看，不随仓库公开
+docs/learning/
+docs/demo.md
+docs/launch-playbook.md
+docs/stack-verification-2026-11.md
+
 # 若某天你决定把学习文档也私有化，取消下面这行的注释即可
 # （注意：README.md 里引用了 docs/learning/，取消后需要同步删掉那些链接）
 # docs/learning/

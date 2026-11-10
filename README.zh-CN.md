@@ -13,7 +13,7 @@
 [![mypy](https://img.shields.io/badge/mypy-strict-success)](pyproject.toml)
 [![license](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
-[架构说明](docs/architecture.md) · [API 参考](docs/api.md) · [运维手册](docs/operations.md) · [安全模型](docs/security.md) · [学习路线（15 篇）](docs/learning/README.md)
+[架构说明](docs/architecture.md) · [API 参考](docs/api.md) · [运维手册](docs/operations.md) · [安全模型](docs/security.md)
 
 ---
 

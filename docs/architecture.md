@@ -17,7 +17,7 @@
 
 横切：评测（`evaluation/`）、可观测（`observability/`：指标 / trace / 就绪探针）、安全（`gateway/security.py`、`guardrails/`）。
 
-> 更完整的分层说明与逐模块精读见 [docs/learning/](./learning/README.md)。
+> 端点级细节见 [api.md](./api.md)，部署与故障处置见 [operations.md](./operations.md)。
 
 ## 关键数据流
 
