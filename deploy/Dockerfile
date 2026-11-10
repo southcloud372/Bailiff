@@ -60,9 +60,14 @@ COPY --from=console --chown=app:app /web/dist ./web/dist
 # 运行时可写目录（SQLite checkpoint / 文件沙箱根目录）
 RUN mkdir -p /app/data/checkpoints /app/data/fs && chown -R app:app /app/data
 
+# 容器内必须监听 0.0.0.0：scripts/serve.py 的默认是 127.0.0.1（本地开发安全默认），
+# 但容器里绑 127.0.0.1 会导致 `docker run -p 8000:8000` 外部完全连不上，
+# 而容器内 healthcheck 又是通的——非常难排查。这里在镜像层修正。
 ENV PATH="/app/.venv/bin:$PATH" \
     PYTHONUNBUFFERED=1 \
-    PYTHONDONTWRITEBYTECODE=1
+    PYTHONDONTWRITEBYTECODE=1 \
+    AGENT_HOST=0.0.0.0 \
+    AGENT_PORT=8000
 
 USER app
 EXPOSE 8000

@@ -1,0 +1,101 @@
+# 最小可用 K8s 清单（单副本 + SQLite 持久卷）。
+#
+#   kubectl create secret generic bailiff-secrets \
+#     --from-literal=DEEPSEEK_API_KEY=sk-... \
+#     --from-literal=AGENT_JWT_SECRET=$(openssl rand -hex 32)
+#   kubectl apply -f deploy/k8s.yaml
+#
+# 用途：先跑起来验证探针语义。**扩容到多副本前必须换成 Postgres + Redis**，
+# 否则每个副本各有一份 SQLite（会话互相看不见）和各一份配额（限流被放大 N 倍）。
+# 参见 docs/operations.md 第一节「多副本的三个硬前提」。
+#
+# 说明：本清单未在真实集群上验证过，apply 前请对照你的集群（StorageClass / 入口 / 镜像仓库）调整。
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: bailiff
+  labels: { app: bailiff }
+spec:
+  replicas: 1
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 0
+  selector:
+    matchLabels: { app: bailiff }
+  template:
+    metadata:
+      labels: { app: bailiff }
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        fsGroup: 10001
+      containers:
+        - name: app
+          image: ghcr.io/southcloud372/bailiff:0.2.0   # 换成你自己的镜像仓库
+          ports:
+            - containerPort: 8000
+          env:
+            - name: AGENT_ENV
+              value: prod          # prod 下：示例密钥会被 /readyz 拒绝、离线模型判不就绪
+            - name: AGENT_HOST
+              value: 0.0.0.0
+            - name: AGENT_CHECKPOINT_BACKEND
+              value: sqlite        # 多副本时改为 postgres，并配置 AGENT_POSTGRES_DSN
+            - name: AGENT_CHECKPOINT_DIR
+              value: /app/data/checkpoints
+            - name: AGENT_READ_ONLY
+              value: "false"
+            - name: DEEPSEEK_API_KEY
+              valueFrom:
+                secretKeyRef: { name: bailiff-secrets, key: DEEPSEEK_API_KEY }
+            - name: AGENT_JWT_SECRET
+              valueFrom:
+                secretKeyRef: { name: bailiff-secrets, key: AGENT_JWT_SECRET }
+          # 存活：只看进程，绝不查下游。查下游会导致数据库抖动时全量重启。
+          livenessProbe:
+            httpGet: { path: /healthz, port: 8000 }
+            initialDelaySeconds: 10
+            periodSeconds: 20
+          # 就绪：查下游，失败即摘流量（不是重启）。
+          readinessProbe:
+            httpGet: { path: /readyz, port: 8000 }
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            failureThreshold: 3
+          resources:
+            requests: { cpu: 250m, memory: 512Mi }
+            limits: { cpu: "1", memory: 1Gi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false   # SQLite 需要写 /app/data
+            capabilities: { drop: ["ALL"] }
+          volumeMounts:
+            - { name: data, mountPath: /app/data }
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: bailiff-data
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: bailiff-data
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 5Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: bailiff
+spec:
+  selector: { app: bailiff }
+  ports:
+    - port: 80
+      targetPort: 8000
+  # SSE 长连接：Ingress/网关需关闭响应缓冲，并把读超时设到大于最长生成时间。
