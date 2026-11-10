@@ -25,7 +25,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v6
+        uses: astral-sh/setup-uv@v7
         with:
           version: "latest"
           enable-cache: true
@@ -82,7 +82,7 @@ jobs:
       AGENT_RATE_LIMIT_BACKEND: memory
     steps:
       - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v6
+      - uses: astral-sh/setup-uv@v7
         with:
           version: "latest"
           enable-cache: true
@@ -143,7 +143,7 @@ jobs:
         if: env.DEEPSEEK_API_KEY == ''
         run: echo "DEEPSEEK_API_KEY 未配置，跳过真机评测（预期行为）。"
 
-      - uses: astral-sh/setup-uv@v6
+      - uses: astral-sh/setup-uv@v7
         if: env.DEEPSEEK_API_KEY != ''
         with:
           version: "latest"
