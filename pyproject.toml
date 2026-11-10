@@ -35,7 +35,7 @@ dependencies = [
 # 本地 clone 不需要装，`uv sync` 即可跑（SQLite + 内存限流）。
 prod = [
     "langgraph-checkpoint-postgres>=3.2,<4",
-    "psycopg[pool]>=3.3,<4",
+    "psycopg[pool]>=3.3.8,<4",
     "redis>=8.1,<9",
 ]
 # 评测门槛：CI 里跑 LLM-as-judge 回归。
