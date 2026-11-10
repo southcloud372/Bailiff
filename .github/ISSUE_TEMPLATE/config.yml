@@ -1,8 +1,8 @@
 blank_issues_enabled: false
 contact_links:
   - name: Security vulnerability
-    url: https://github.com/OWNER/agent-platform/security/advisories/new
+    url: https://github.com/southcloud372/Bailiff/security/advisories/new
     about: Please report security issues privately, not in a public issue.
   - name: Question / discussion
-    url: https://github.com/OWNER/agent-platform/discussions
+    url: https://github.com/southcloud372/Bailiff/discussions
     about: For usage questions and design discussion.

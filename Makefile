@@ -48,7 +48,7 @@ build-web: ## 构建控制台到 web/dist
 	cd web && npm run build
 
 docker: ## 构建生产镜像
-	docker build -f deploy/Dockerfile -t agent-platform:local .
+	docker build -f deploy/Dockerfile -t bailiff:local .
 
 clean: ## 清理缓存与构建产物
 	rm -rf .pytest_cache .mypy_cache .ruff_cache web/dist

@@ -26,100 +26,6 @@ wheels = [
 ]
 
 [[package]]
-name = "agent-platform"
-version = "0.2.0"
-source = { editable = "." }
-dependencies = [
-    { name = "fastapi" },
-    { name = "httpx" },
-    { name = "langchain" },
-    { name = "langchain-core" },
-    { name = "langchain-openai" },
-    { name = "langgraph" },
-    { name = "litellm" },
-    { name = "mcp" },
-    { name = "opentelemetry-api" },
-    { name = "opentelemetry-exporter-otlp-proto-http" },
-    { name = "opentelemetry-sdk" },
-    { name = "pgvector" },
-    { name = "psycopg", extra = ["binary"] },
-    { name = "pydantic" },
-    { name = "pydantic-settings" },
-    { name = "python-dotenv" },
-    { name = "sse-starlette" },
-    { name = "uvicorn", extra = ["standard"] },
-]
-
-[package.optional-dependencies]
-a2a = [
-    { name = "a2a-sdk" },
-]
-eval = [
-    { name = "deepeval" },
-]
-observability = [
-    { name = "langfuse" },
-    { name = "opentelemetry-instrumentation-fastapi" },
-    { name = "opentelemetry-instrumentation-httpx" },
-]
-prod = [
-    { name = "langgraph-checkpoint-postgres" },
-    { name = "psycopg", extra = ["pool"] },
-    { name = "redis" },
-]
-sandbox = [
-    { name = "e2b" },
-]
-
-[package.dev-dependencies]
-dev = [
-    { name = "mypy" },
-    { name = "pytest" },
-    { name = "pytest-asyncio" },
-    { name = "ruff" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "a2a-sdk", marker = "extra == 'a2a'", specifier = ">=1.3,<2" },
-    { name = "deepeval", marker = "extra == 'eval'", specifier = ">=4.3,<5" },
-    { name = "e2b", marker = "extra == 'sandbox'", specifier = ">=2.63,<3" },
-    { name = "fastapi", specifier = ">=0.162,<1" },
-    { name = "httpx", specifier = ">=0.28,<1" },
-    { name = "langchain", specifier = ">=1.4.9,<2" },
-    { name = "langchain-core", specifier = ">=1.7,<2" },
-    { name = "langchain-openai", specifier = ">=1.7,<2" },
-    { name = "langfuse", marker = "extra == 'observability'", specifier = ">=5.2,<6" },
-    { name = "langgraph", specifier = ">=1.2,<2" },
-    { name = "langgraph-checkpoint-postgres", marker = "extra == 'prod'", specifier = ">=3.2,<4" },
-    { name = "litellm", specifier = ">=1.108,<2" },
-    { name = "mcp", specifier = ">=2.3,<3" },
-    { name = "opentelemetry-api", specifier = ">=1.45,<2" },
-    { name = "opentelemetry-exporter-otlp-proto-http", specifier = ">=1.45,<2" },
-    { name = "opentelemetry-instrumentation-fastapi", marker = "extra == 'observability'", specifier = ">=0.63,<1" },
-    { name = "opentelemetry-instrumentation-httpx", marker = "extra == 'observability'", specifier = ">=0.63,<1" },
-    { name = "opentelemetry-sdk", specifier = ">=1.45,<2" },
-    { name = "pgvector", specifier = ">=0.5,<1" },
-    { name = "psycopg", extras = ["binary"], specifier = ">=3.3,<4" },
-    { name = "psycopg", extras = ["pool"], marker = "extra == 'prod'", specifier = ">=3.3,<4" },
-    { name = "pydantic", specifier = ">=2.14,<3" },
-    { name = "pydantic-settings", specifier = ">=2.16,<3" },
-    { name = "python-dotenv", specifier = ">=1.0" },
-    { name = "redis", marker = "extra == 'prod'", specifier = ">=8.1,<9" },
-    { name = "sse-starlette", specifier = ">=3.7,<4" },
-    { name = "uvicorn", extras = ["standard"], specifier = ">=0.54,<1" },
-]
-provides-extras = ["prod", "eval", "sandbox", "a2a", "observability"]
-
-[package.metadata.requires-dev]
-dev = [
-    { name = "mypy", specifier = ">=2.4,<3" },
-    { name = "pytest", specifier = ">=9.2,<10" },
-    { name = "pytest-asyncio", specifier = ">=1.4,<2" },
-    { name = "ruff", specifier = ">=0.17,<1" },
-]
-
-[[package]]
 name = "aiohappyeyeballs"
 version = "2.7.1"
 source = { registry = "https://pypi.org/simple" }
@@ -341,6 +247,100 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/47/d7/5bbeb12c44d7c4f2fb5b56abce497eb5ed9f34d85701de869acedd602619/backoff-2.2.1.tar.gz", hash = "sha256:03f829f5bb1923180821643f8753b0502c3b682293992485b0eef2807afa5cba", size = 17001, upload-time = "2022-10-05T19:19:32.061Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/df/73/b6e24bd22e6720ca8ee9a85a0c4a2971af8497d8f3193fa05390cbd46e09/backoff-2.2.1-py3-none-any.whl", hash = "sha256:63579f9a0628e06278f7e47b7d7d5b6ce20dc65c5e96a6f3ca99a6adca0396e8", size = 15148, upload-time = "2022-10-05T19:19:30.546Z" },
+]
+
+[[package]]
+name = "bailiff"
+version = "0.2.0"
+source = { editable = "." }
+dependencies = [
+    { name = "fastapi" },
+    { name = "httpx" },
+    { name = "langchain" },
+    { name = "langchain-core" },
+    { name = "langchain-openai" },
+    { name = "langgraph" },
+    { name = "litellm" },
+    { name = "mcp" },
+    { name = "opentelemetry-api" },
+    { name = "opentelemetry-exporter-otlp-proto-http" },
+    { name = "opentelemetry-sdk" },
+    { name = "pgvector" },
+    { name = "psycopg", extra = ["binary"] },
+    { name = "pydantic" },
+    { name = "pydantic-settings" },
+    { name = "python-dotenv" },
+    { name = "sse-starlette" },
+    { name = "uvicorn", extra = ["standard"] },
+]
+
+[package.optional-dependencies]
+a2a = [
+    { name = "a2a-sdk" },
+]
+eval = [
+    { name = "deepeval" },
+]
+observability = [
+    { name = "langfuse" },
+    { name = "opentelemetry-instrumentation-fastapi" },
+    { name = "opentelemetry-instrumentation-httpx" },
+]
+prod = [
+    { name = "langgraph-checkpoint-postgres" },
+    { name = "psycopg", extra = ["pool"] },
+    { name = "redis" },
+]
+sandbox = [
+    { name = "e2b" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "mypy" },
+    { name = "pytest" },
+    { name = "pytest-asyncio" },
+    { name = "ruff" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "a2a-sdk", marker = "extra == 'a2a'", specifier = ">=1.3,<2" },
+    { name = "deepeval", marker = "extra == 'eval'", specifier = ">=4.3,<5" },
+    { name = "e2b", marker = "extra == 'sandbox'", specifier = ">=2.63,<3" },
+    { name = "fastapi", specifier = ">=0.162,<1" },
+    { name = "httpx", specifier = ">=0.28,<1" },
+    { name = "langchain", specifier = ">=1.4.9,<2" },
+    { name = "langchain-core", specifier = ">=1.7,<2" },
+    { name = "langchain-openai", specifier = ">=1.7,<2" },
+    { name = "langfuse", marker = "extra == 'observability'", specifier = ">=5.2,<6" },
+    { name = "langgraph", specifier = ">=1.2,<2" },
+    { name = "langgraph-checkpoint-postgres", marker = "extra == 'prod'", specifier = ">=3.2,<4" },
+    { name = "litellm", specifier = ">=1.108,<2" },
+    { name = "mcp", specifier = ">=2.3,<3" },
+    { name = "opentelemetry-api", specifier = ">=1.45,<2" },
+    { name = "opentelemetry-exporter-otlp-proto-http", specifier = ">=1.45,<2" },
+    { name = "opentelemetry-instrumentation-fastapi", marker = "extra == 'observability'", specifier = ">=0.63,<1" },
+    { name = "opentelemetry-instrumentation-httpx", marker = "extra == 'observability'", specifier = ">=0.63,<1" },
+    { name = "opentelemetry-sdk", specifier = ">=1.45,<2" },
+    { name = "pgvector", specifier = ">=0.5,<1" },
+    { name = "psycopg", extras = ["binary"], specifier = ">=3.3,<4" },
+    { name = "psycopg", extras = ["pool"], marker = "extra == 'prod'", specifier = ">=3.3,<4" },
+    { name = "pydantic", specifier = ">=2.14,<3" },
+    { name = "pydantic-settings", specifier = ">=2.16,<3" },
+    { name = "python-dotenv", specifier = ">=1.0" },
+    { name = "redis", marker = "extra == 'prod'", specifier = ">=8.1,<9" },
+    { name = "sse-starlette", specifier = ">=3.7,<4" },
+    { name = "uvicorn", extras = ["standard"], specifier = ">=0.54,<1" },
+]
+provides-extras = ["prod", "eval", "sandbox", "a2a", "observability"]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "mypy", specifier = ">=2.4,<3" },
+    { name = "pytest", specifier = ">=9.2,<10" },
+    { name = "pytest-asyncio", specifier = ">=1.4,<2" },
+    { name = "ruff", specifier = ">=0.17,<1" },
 ]
 
 [[package]]

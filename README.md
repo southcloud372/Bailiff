@@ -1,11 +1,11 @@
-# Agent Platform
+# Bailiff
 
 **Your agent works in a notebook. This is what it takes to put it in production.**
 
 A production-grade agent runtime: every tool call goes through auth → permission → rate limit → audit, every step is checkpointed, every token is costed, and every release is gated by an evaluation suite.
 
-[![CI](https://github.com/OWNER/agent-platform/actions/workflows/ci.yml/badge.svg)](../../actions)
-[![tests](https://img.shields.io/badge/tests-160%20passed-brightgreen)](tests/)
+[![CI](https://github.com/southcloud372/Bailiff/actions/workflows/ci.yml/badge.svg)](../../actions)
+[![tests](https://img.shields.io/badge/tests-184%20passed-brightgreen)](tests/)
 [![python](https://img.shields.io/badge/python-3.13-blue)](pyproject.toml)
 [![mypy](https://img.shields.io/badge/mypy-strict-success)](pyproject.toml)
 [![license](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
@@ -18,7 +18,7 @@ A production-grade agent runtime: every tool call goes through auth → permissi
 ## 60-second demo (no API key needed)
 
 ```bash
-git clone https://github.com/OWNER/agent-platform && cd agent-platform
+git clone https://github.com/southcloud372/Bailiff.git && cd Bailiff
 docker compose -f docker-compose.demo.yml up --build
 # open http://localhost:8000 → click "演示登录" / "Demo login" → chat
 ```
@@ -172,7 +172,7 @@ Pick Dify if you want a visual builder. Pick this if you want to read, audit and
 
 ```bash
 # Single container (console included, no nginx)
-docker build -f deploy/Dockerfile -t agent-platform .
+docker build -f deploy/Dockerfile -t bailiff .
 
 # Full stack: Postgres 18 + pgvector, Redis 8, app
 docker compose up -d

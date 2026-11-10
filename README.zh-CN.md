@@ -1,4 +1,4 @@
-# Agent Platform
+# Bailiff
 
 **[English](README.md) | 简体中文**
 
@@ -7,8 +7,8 @@
 一个生产级 Agent 运行时：每次工具调用都经过 鉴权 → 权限 → 限流 → 审计，每一步状态都落 checkpoint，
 每个 token 都计入成本，每次发版都被评测集拦住。
 
-[![CI](https://github.com/OWNER/agent-platform/actions/workflows/ci.yml/badge.svg)](../../actions)
-[![tests](https://img.shields.io/badge/tests-160%20passed-brightgreen)](tests/)
+[![CI](https://github.com/southcloud372/Bailiff/actions/workflows/ci.yml/badge.svg)](../../actions)
+[![tests](https://img.shields.io/badge/tests-184%20passed-brightgreen)](tests/)
 [![python](https://img.shields.io/badge/python-3.13-blue)](pyproject.toml)
 [![mypy](https://img.shields.io/badge/mypy-strict-success)](pyproject.toml)
 [![license](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
@@ -20,7 +20,7 @@
 ## 60 秒跑起来（不需要 API Key）
 
 ```bash
-git clone https://github.com/OWNER/agent-platform && cd agent-platform
+git clone https://github.com/southcloud372/Bailiff.git && cd Bailiff
 docker compose -f docker-compose.demo.yml up --build
 # 打开 http://localhost:8000 → 点「演示登录」→ 直接对话
 ```
@@ -165,7 +165,7 @@ An assistant message with 'tool_calls' must be followed by tool messages...
 
 ```bash
 # 单容器（含控制台，不需要 nginx）
-docker build -f deploy/Dockerfile -t agent-platform .
+docker build -f deploy/Dockerfile -t bailiff .
 
 # 完整栈：Postgres 18 + pgvector、Redis 8、应用
 docker compose up -d

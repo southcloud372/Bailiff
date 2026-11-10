@@ -31,9 +31,10 @@
 
 ## 二、还需要你亲手做的 6 件事（我做不了的部分）
 
-1. **把 `OWNER` 全部替换成你的 GitHub 用户名**：
+1. **确认仓库地址与实际一致**：当前所有链接指向 `southcloud372/Bailiff`，
+   若改用户名或仓库名，统一替换：
    ```bash
-   grep -rl "OWNER/agent-platform" . --exclude-dir=.git | xargs sed -i 's#OWNER/agent-platform#<你的名字>/agent-platform#g'
+   grep -rl "southcloud372/Bailiff" . --exclude-dir=.git | xargs sed -i 's#southcloud372/Bailiff#<新路径>#g'
    ```
 2. **仓库设置**（直接影响搜索曝光）：
    - Description：`Production-grade agent runtime: MCP-native tool gateway, durable checkpoints, cost caps, eval-gated CI.`
