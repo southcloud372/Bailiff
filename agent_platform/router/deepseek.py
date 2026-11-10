@@ -1,27 +1,11 @@
-"""DeepSeek 思考模式适配：让「推理内容」在工具调用链中正确回传。
+"""DeepSeek 思考模式的请求适配。
 
-## 问题
+思考模型会返回 reasoning_content，并要求带 tool_calls 的 assistant 消息在下一轮
+请求中把它一起传回，否则 API 返回 400。LangChain 的 ChatOpenAI 序列化时只映射
+白名单字段，该字段被丢弃，表现为第一次工具调用成功、第二次模型调用失败。
 
-DeepSeek V4.1-Flash 是**思考模型**：响应里除了 ``content`` 还有 ``reasoning_content``。
-它的 API 有一条硬约束：
-
-> 带 ``tool_calls`` 的 assistant 消息，在下一轮请求中**必须**把 ``reasoning_content``
-> 一起传回；缺失直接 400 ``invalid_request_error``。
-
-而 LangChain 的 ``ChatOpenAI._convert_message_to_dict`` 只映射白名单字段，
-``AIMessage.additional_kwargs["reasoning_content"]`` 会被静默丢弃。
-
-结果是一个非常隐蔽的故障：**单轮问答正常，只要 Agent 调一次工具，第二轮必崩。**
-在纯对话 demo 里永远测不出来，只有真实多步任务才会暴露。
-
-## 解法
-
-覆写 ``_get_request_payload``：在标准 payload 生成之后，把 ``reasoning_content``
-补回对应的 assistant 消息。这不是「绕过 SDK」，而是补上 SDK 尚未覆盖的供应商扩展字段
-（OpenAI 兼容协议的常见形态）。
-
-对非思考模型（如 deepseek-chat）无副作用：它们根本不返回 ``reasoning_content``，
-该分支不会命中。
+这里覆写 _get_request_payload，把字段补回 assistant 消息。非思考模型不返回该字段，
+不受影响。
 """
 
 from __future__ import annotations
@@ -35,7 +19,7 @@ from langchain_openai import ChatOpenAI
 logger = logging.getLogger(__name__)
 
 # 历史 checkpoint 可能缺少 reasoning_content（例如升级前写入的状态）。
-# 此时补一个占位串，让请求合法而不是整轮 400——丢掉的是「思考过程」，
+# 此时补一个占位串，让请求合法而不是整轮 400，丢掉的是「思考过程」，
 # 保住的是「已经执行过的工具调用」这条事实链。
 _MISSING_REASONING = "（该轮推理内容未记录）"
 
@@ -79,7 +63,7 @@ def _repair_dangling_tool_calls(messages: list[dict[str, Any]]) -> list[dict[str
 
     OpenAI 兼容 API 对此是**硬校验**：``An assistant message with 'tool_calls' must be
     followed by tool messages responding to each 'tool_call_id'``。一旦命中，这条会话
-    后续每一轮都失败，且报错与真实原因毫无关系——是线上最典型的「线程被写坏」故障。
+    后续每一轮都失败，且报错与真实原因毫无关系，是线上最典型的「线程被写坏」故障。
 
     修复策略：为每个缺失的 ``tool_call_id`` 补一条内容为说明的 tool 消息。
     对模型而言这是「那次调用没有结果」，语义真实；对协议而言历史重新合法。

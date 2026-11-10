@@ -160,7 +160,7 @@ def build_ticket_workflow(
     """组装工单审批图。测试可注入 classify/answer（无需真实模型）。
 
     checkpointer 必须由调用方传入持久化后端：工单停在 ``interrupt()`` 等人审批，
-    人可能几小时后才点「同意」——用内存 saver 会因重启丢掉整个审批上下文。
+    人可能几小时后才点「同意」，用内存 saver 会因重启丢掉整个审批上下文。
     """
     if classify is None:
         model = model or build_model(ModelSettings(), cost_tracker=cost_tracker)

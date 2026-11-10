@@ -27,6 +27,9 @@ web: ## 前端开发服务器（热更新，代理到 8000）
 demo: ## 零 API Key 的 Docker 演示
 	docker compose -f docker-compose.demo.yml up --build
 
+ingest: ## 把示例语料灌进本地检索库（零依赖）
+	$(PY) scripts/ingest.py
+
 test: ## 跑测试
 	$(PY) -m pytest -q
 

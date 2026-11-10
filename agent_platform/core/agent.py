@@ -1,10 +1,10 @@
 """LangGraph 编排层：ReAct Agent（模型 + 网关工具闭环）。
 
-模型用 LangChain ChatOpenAI 对接 DeepSeek（OpenAI 兼容），工具统一走 Gateway——
+模型用 LangChain ChatOpenAI 对接 DeepSeek（OpenAI 兼容），工具统一走 Gateway，
 每一次工具调用都经过鉴权/权限/限流/审计，治理不旁路。
 
 身份传递：工具执行时的「调用方身份」不写死在 Agent 上，而是通过 contextvar 按请求
-解析——用户 JWT → Principal 贯穿整个 Agent 工具链，落到网关的权限检查。
+解析，用户 JWT → Principal 贯穿整个 Agent 工具链，落到网关的权限检查。
 
 注：模型路由（router/llm.py 的 LiteLLM ModelRouter）是更低一层的「多供应商路由/
 降级/成本」抽象；这里先用 LangChain 原生 chat model 以获得 tool-calling 集成，
@@ -121,7 +121,7 @@ class HttpFetchArgs(BaseModel):
 def resolve_model_backend(settings: ModelSettings) -> str:
     """决定用真模型还是离线演示模型。
 
-    ``auto`` 的语义是**有 key 就用真的，没 key 就降级**——这让「clone 即跑」成为可能，
+    ``auto`` 的语义是**有 key 就用真的，没 key 就降级**，这让「clone 即跑」成为可能，
     同时把「悄悄用假模型」的风险交给 /readyz 暴露（它会报 degraded）。
     ``deepseek`` 则严格要求 key，缺了直接抛错，避免生产环境静默降级。
     """
@@ -170,7 +170,7 @@ _MAX_TOOL_RESULT_CHARS = 8000
 """工具结果进入上下文前的字符上限。
 
 为什么必须在工具出口截断：模型上下文是有限且**按 token 计费**的资源。
-一个返回 200KB 日志的 read_file 会同时造成三件事——
+一个返回 200KB 日志的 read_file 会同时造成三件事，
 上下文爆掉导致前文被挤走、单轮成本涨十倍、延迟从 2 秒变 20 秒。
 在出口截断比在提示词里求模型「少读点」可靠得多。
 """
@@ -232,12 +232,12 @@ def build_tools(gateway: Gateway) -> list[StructuredTool]:
             try:
                 return _truncate_result(await gateway.call(principal, name, dict(kwargs)))
             except Exception as exc:
-                # 关键设计：**所有**工具异常（含越权、限流、沙箱拒绝、上游故障）
+                # **所有**工具异常（含越权、限流、沙箱拒绝、上游故障）
                 # 都转成模型可读的结构化结果，而不是向上抛。
                 #
                 # 原因不是「宽容」，而是协议约束：OpenAI 兼容 API 要求
                 # 「带 tool_calls 的 assistant 消息后面必须有对应数量的 tool 消息」。
-                # 一旦某个工具抛异常导致少一条 tool 消息，这条会话线程就**永久坏死**——
+                # 一旦某个工具抛异常导致少一条 tool 消息，这条会话线程就**永久坏死**，
                 # 后续每一轮都会 400，且错误信息与真实原因无关，极难排查。
                 #
                 # 治理并没有被削弱：拒绝仍发生在网关（鉴权/权限/限流），审计照样落库，
@@ -265,7 +265,7 @@ def build_tools(gateway: Gateway) -> list[StructuredTool]:
 
     # 按**网关实际注册情况**暴露工具，而不是写死清单。
     # 反例（曾经的写法）：直接列三个文件工具。只读模式下网关没有 write_file，
-    # 但 Agent 仍会看到并调用它——模型要先浪费一次调用才知道「这个能力不存在」。
+    # 但 Agent 仍会看到并调用它，模型要先浪费一次调用才知道「这个能力不存在」。
     # 正确做法是「网关注册了什么，模型才看得见什么」。
     filesystem_specs: dict[str, tuple[type[BaseModel], str]] = {
         "read_file": (ReadFileArgs, "读取根目录内的文本文件内容"),
@@ -444,8 +444,8 @@ class Agent:
     ) -> AsyncIterator[str]:
         """流式产出回复正文（token 级）。推理与工具事件被丢弃，见 ``stream_events``。
 
-        注意（安全权衡，面试可讲）：流式场景下，输出脱敏无法对「已发送的分块」撤回，
-        因此这里**只做输入护栏**，输出脱敏不逐块应用——分块是原始文本。敏感内容的
+        安全权衡：流式场景下，输出脱敏无法对「已发送的分块」撤回，
+        因此这里**只做输入护栏**，输出脱敏不逐块应用，分块是原始文本。敏感内容的
         脱敏由非流式 /v1/chat 与审计落库兜底；生产上可在流式缓冲上做「延迟窗口脱敏」，
         以「晚一点、但完整」换取安全。这是流式体验与安全的经典取舍。
         """

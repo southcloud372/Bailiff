@@ -147,7 +147,7 @@ def _thread_key(principal: Principal, requested: str | None) -> str:
     """把「用户提供的会话 id」转成**带身份隔离**的 checkpoint 键。
 
     为什么必须加前缀：checkpoint 是全局按 thread_id 索引的。若直接使用客户端传来的
-    thread_id，用户 A 只要猜到用户 B 的 id 就能读走整段对话历史——这是一类真实发生过的
+    thread_id，用户 A 只要猜到用户 B 的 id 就能读走整段对话历史，这是一类真实发生过的
     越权（IDOR）。加 principal 前缀后，别人的线程根本不在你的命名空间里。
 
     不传 thread_id 时退化为 principal.id，保持「一个用户一个默认会话」的旧行为，
@@ -159,7 +159,7 @@ def _thread_key(principal: Principal, requested: str | None) -> str:
     prefix = f"{principal.id}#"
     if requested.startswith(prefix):
         # 已经是本用户的合成键（例如 /v1/tickets 回传的 thread_id 再传回来），保持幂等，
-        # 否则同一次审批会落到两个不同的 checkpoint 上——表现为「状态凭空消失」。
+        # 否则同一次审批会落到两个不同的 checkpoint 上，表现为「状态凭空消失」。
         return requested
     # 用 # 而非 : 分隔：JWT sub 里可能含 :，但几乎不会含 #
     return f"{prefix}{requested}"
@@ -218,7 +218,7 @@ def create_app(
 
     app = FastAPI(title="Bailiff Gateway", version="0.2.0", lifespan=lifespan)
     # 最外层中间件：request id 透传/回显、结构化访问日志、HTTP 指标。
-    # 必须是纯 ASGI 实现——BaseHTTPMiddleware 会破坏 SSE 的逐块下发。
+    # 必须是纯 ASGI 实现，BaseHTTPMiddleware 会破坏 SSE 的逐块下发。
     app.add_middleware(RequestContextMiddleware)
     app.state.platform = platform
     app.state.agent = agent
@@ -245,7 +245,7 @@ def create_app(
         async def dev_token(payload: DevTokenRequest | None = None) -> dict[str, Any]:
             """**仅 dev 环境**签发演示 token，让控制台免去手工造 JWT。
 
-            生产环境这条路由根本不存在（不是靠鉴权挡，而是压根不注册）——这比
+            生产环境这条路由根本不存在（不是靠鉴权挡，而是压根不注册），这比
             「注册了再判断 env」更安全：没有可被绕过的分支。生产请接 IdP / 网关签发。
             """
             req = payload or DevTokenRequest()
@@ -309,7 +309,7 @@ def create_app(
         except PermissionDenied as exc:
             # 403 有两种成因：角色没权限，或该能力在本实例压根没注册（只读模式 /
             # 未配置白名单）。错误信息里点名两者，否则运维只能看到工具名，
-            # 分不清是「配错了」还是「没权限」——这种含糊会浪费排查时间。
+            # 分不清是「配错了」还是「没权限」，这种含糊会浪费排查时间。
             raise HTTPException(
                 status.HTTP_403_FORBIDDEN,
                 f"无权调用工具或该实例未启用: {exc}（先看 /v1/tools 的实际清单）",

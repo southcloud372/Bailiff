@@ -1,10 +1,10 @@
 """网关配置：从环境变量 / .env 读取。
 
 配置按「演化速度」分层，避免一个巨型 Settings：
-- ``Settings``：网关治理参数（鉴权、限流、沙箱根目录）——变化最慢；
-- ``ModelSettings``：模型层参数（供应商、模型名、预算）——跟随供应商调价/换名；
-- ``KnowledgeSettings``：基础设施地址（pgvector / 嵌入端点）——跟随部署环境；
-- ``RuntimeSettings``：运行时后端选择（checkpoint / 缓存 / 限流）——决定「同一份代码
+- ``Settings``：网关治理参数（鉴权、限流、沙箱根目录），变化最慢；
+- ``ModelSettings``：模型层参数（供应商、模型名、预算），跟随供应商调价/换名；
+- ``KnowledgeSettings``：基础设施地址（pgvector / 嵌入端点），跟随部署环境；
+- ``RuntimeSettings``：运行时后端选择（checkpoint / 缓存 / 限流），决定「同一份代码
   跑在笔记本还是生产」。
 """
 
@@ -37,7 +37,7 @@ class Settings(BaseSettings):
 
     # 只读模式：**不注册**写入类工具（而不是注册后拒绝）。
     # 用途：公网演示、外包/第三方接入、审计期间临时收紧。
-    # 「能力不存在」比「能力存在但会拒绝」更难被绕过——没有可绕过的分支。
+    # 「能力不存在」比「能力存在但会拒绝」更难被绕过，没有可绕过的分支。
     read_only: bool = False
 
     # 允许 Agent 抓取的域名白名单（逗号分隔，支持 *.example.com）。
@@ -61,7 +61,7 @@ class ModelSettings(BaseSettings):
 
     # 模型后端：auto（有 key 用真模型，无 key 降级到离线演示模型）
     # / deepseek（强制真模型，缺 key 直接报错）/ mock（强制离线，用于 demo 与测试）。
-    # 开源项目的关键取舍：默认 auto 让「clone 即跑」，而不是「先填 key」。
+    # 开源项目的默认 auto 让「clone 即跑」，而不是「先填 key」。
     llm_backend: Literal["auto", "deepseek", "mock"] = Field(
         default="auto",
         validation_alias=AliasChoices("AGENT_LLM_BACKEND", "DEEPSEEK_LLM_BACKEND"),
@@ -112,6 +112,13 @@ class KnowledgeSettings(BaseSettings):
     embedding_model: str = "bge-m3"
     # 向量维度必须与模型一致（bge-m3 = 1024）。写错会在插入时报维度不匹配。
     embedding_dimensions: int = 1024
+
+    # 检索后端：auto 等同 local（零依赖，SQLite + 哈希嵌入）；postgres 需要 pgvector 与嵌入服务。
+    # 默认走 local 是刻意的：配一个连不上的向量库不会报错，只会让 search_knowledge 永远 502，
+    # 使用者很难判断是「没灌库」还是「基础设施没起」。
+    rag_backend: Literal["auto", "local", "postgres"] = "auto"
+    local_db_path: Path = Path("./data/knowledge.sqlite")
+    local_embedding_dimensions: int = 512
 
     # pgvector 连接串（对齐 docker-compose.yml 里的 db 服务）。留空则按 infra_host 推导。
     vector_dsn: str = ""

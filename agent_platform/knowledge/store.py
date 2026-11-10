@@ -121,7 +121,7 @@ class PgVectorStore:
     片段就是几百毫秒到几秒。``USING hnsw (embedding vector_cosine_ops)`` 把检索从
     O(n) 降到近似 O(log n)，这是 RAG 从「能用」到「能用」的分水岭。
 
-    维度必须显式声明（``vector(1024)``）——pgvector 不给无维度列建 ANN 索引。
+    维度必须显式声明（``vector(1024)``），pgvector 不给无维度列建 ANN 索引。
     """
 
     def __init__(

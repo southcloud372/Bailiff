@@ -6,7 +6,7 @@
 - 纯 ASGI 还能在 ``http.response.start`` 时改写响应头（回显 ``x-request-id``）。
 
 它承担三件事，且都在最外层（任何业务逻辑之前）：
-1. 生成/透传 request id —— 让日志、trace、审计、成本能按请求串起来；
+1. 生成/透传 request id ， 让日志、trace、审计、成本能按请求串起来；
 2. 记录访问日志（结构化的，含耗时与路由模板）；
 3. 打 HTTP 指标（按路由模板聚合，避免 ``/v1/tickets/abc123`` 造成 label 爆炸）。
 """

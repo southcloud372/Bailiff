@@ -7,6 +7,11 @@ versioning follows [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **Zero-dependency retrieval backend** (`knowledge/local.py`, `knowledge/factory.py`,
+  `scripts/ingest.py`): SQLite vector store plus a deterministic hashing embedder, so RAG works
+  without pgvector or an embedding service. `AGENT_RAG_BACKEND=postgres` switches back to the
+  production path. Includes a `knowledge` readiness probe that reports chunk count, because an
+  empty index otherwise looks like "the model ignores the knowledge base".
 - **Egress tool with SSRF defence** (`tools/web.py`): `http_fetch` with a domain allowlist
   (deny by default), post-DNS IP validation (blocks 127/8, 10/8, 172.16/12, 192.168/16,
   169.254/16 including cloud metadata), per-hop redirect revalidation, and a byte cap.
@@ -40,6 +45,11 @@ versioning follows [Semantic Versioning](https://semver.org/).
 - Unknown API paths returned 405 instead of 404 when the static console was mounted at `/`.
 
 ### Changed
+- Default retrieval backend is now local instead of pgvector. Previously a missing Ollama or
+  Postgres made `search_knowledge` fail with 502, which read as "RAG is broken" rather than
+  "infrastructure is missing".
+- Removed explanatory scaffolding from code docstrings and docs: markdown headings inside Python
+  docstrings, interview-oriented phrasing, and the overuse of em dashes.
 - `/v1/call` 403 now names both possible causes (missing role vs. capability not enabled on this
   instance), instead of echoing only the tool name.
 - `prod` treats the `llm` readiness probe as critical: shipping the offline model now fails

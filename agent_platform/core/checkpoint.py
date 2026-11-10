@@ -1,25 +1,11 @@
-"""持久化 checkpoint：把 LangGraph 的图状态落到 SQLite，进程重启后还能续跑。
+"""LangGraph 图状态的持久化后端。
 
-### 为什么这是「企业级」的硬门槛
+MemorySaver 把状态放在进程内存里，进程重启即丢失：等待人工审批的工单会消失，
+多轮对话上下文会断。这里提供三种后端，按部署形态选择：
 
-``MemorySaver`` 把图状态放在进程内存里。这在 demo 里完全够用，但一上生产就是三个
-致命问题：
+memory 只用于测试；sqlite 单机持久化，不依赖外部服务；postgres 供多副本共享。
 
-1. **重启即丢**：发版、OOM、被 K8s 驱逐，所有进行中的会话与「等待审批的工单」全部消失；
-2. **无法水平扩展**：两个副本各自持有一半状态，负载均衡把用户的下一轮请求打到另一台，
-   它根本不知道这个会话讲到哪了；
-3. **HITL 断链**：工单停 ``interrupt()`` 等人审批，人第二天才点「同意」——进程早就重启了。
-
-### 实现策略：写穿（write-through）+ 按线程惰性加载
-
-不重写 LangGraph 的 checkpoint 协议（那是一套容易写错的增量 channel 机制），而是：
-
-- 继承官方 ``InMemorySaver``，**完全复用它的语义**（含 delta channel 历史计算）；
-- 在 ``put`` / ``put_writes`` / ``delete_thread`` 之后把「刚发生变化的那部分」写穿到 SQLite；
-- 读的时候按 ``thread_id`` 惰性把该线程的历史 hydrate 回内存，避免启动时全表扫描。
-
-这等价于「内存是一级缓存、SQLite 是持久层」，语义与官方实现一致，只是多了落盘。
-生产替换为 ``langgraph-checkpoint-postgres`` 时，只需换掉这一个类（见 ADR-0005）。
+写入采用 write-through，读取按线程惰性加载。
 """
 
 from __future__ import annotations

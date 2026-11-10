@@ -10,6 +10,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
@@ -26,9 +27,8 @@ from agent_platform.gateway.mcp_client import MCPGateway, MCPServerSpec
 from agent_platform.gateway.policy import PermissionRule
 from agent_platform.gateway.ratelimit import build_rate_limiter
 from agent_platform.gateway.wiring import build_platform
-from agent_platform.knowledge.embedder import OllamaEmbedder
+from agent_platform.knowledge.factory import build_knowledge_stack
 from agent_platform.knowledge.rag import RAGPipeline
-from agent_platform.knowledge.store import PgVectorStore
 from agent_platform.knowledge.tools import build_knowledge_tools
 from agent_platform.memory.service import MemoryService
 from agent_platform.observability.health import Readiness, callable_probe, static_probe
@@ -67,6 +67,7 @@ def _build_readiness(
     mcp_gateway: MCPGateway | None,
     cache: Any | None,
     model_settings: ModelSettings | None = None,
+    knowledge: tuple[str, int] | None = None,
 ) -> Readiness:
     """在默认探针之上追加运行时依赖探针。"""
     readiness = default_readiness(platform)
@@ -77,7 +78,7 @@ def _build_readiness(
         from agent_platform.core.agent import resolve_model_backend
 
         backend = resolve_model_backend(model_settings)
-        # dev 下演示模型只告警（方便本地跑）；prod 下必须判不就绪——
+        # dev 下演示模型只告警（方便本地跑）；prod 下必须判不就绪，
         # 「带着一个不会推理的模型上线」是最隐蔽的故障：接口全 200，回答全是废话。
         readiness.add(
             "llm",
@@ -110,6 +111,19 @@ def _build_readiness(
         readiness.add(
             "semantic_cache", static_probe(True, "已启用（嵌入服务按需探测）"), critical=False
         )
+
+    if knowledge is not None:
+        backend, chunks = knowledge
+        # 片段为 0 说明库还没灌：接口能通，但检索永远返回空，看起来像「模型不会用知识库」。
+        readiness.add(
+            "knowledge",
+            static_probe(
+                chunks > 0,
+                f"backend={backend}，片段={chunks}"
+                + ("" if chunks > 0 else "（未灌库：运行 uv run python scripts/ingest.py）"),
+            ),
+            critical=False,
+        )
     return readiness
 
 
@@ -141,16 +155,10 @@ def main() -> None:
         redis_url=runtime.redis_url,
     )
 
-    # ── 知识/记忆（需要 pgvector + 嵌入服务，缺依赖时工具会报错但不影响启动）──
+    # ── 知识/记忆：默认本地 SQLite 后端，配 AGENT_RAG_BACKEND=postgres 才走 pgvector ──
     knowledge_settings = KnowledgeSettings()
-    embedder = OllamaEmbedder(
-        base_url=knowledge_settings.embedding_base_url,
-        model=knowledge_settings.embedding_model,
-    )
-    store = PgVectorStore(
-        knowledge_settings.vector_dsn,
-        dimensions=knowledge_settings.embedding_dimensions,
-    )
+    stack = build_knowledge_stack(knowledge_settings)
+    store, embedder, rag_backend = stack.store, stack.embedder, stack.backend
     rag = RAGPipeline(store, embedder)
     memory = MemoryService(store, embedder)
     knowledge_tools = build_knowledge_tools(rag, memory)
@@ -215,12 +223,18 @@ def main() -> None:
         except Exception as exc:
             logger.error("checkpoint_setup_failed", extra={"error": str(exc)})
 
+    try:
+        chunk_count = asyncio.run(store.count())
+    except Exception:
+        chunk_count = -1
+
     readiness = _build_readiness(
         platform,
         checkpointer=agent_saver,
         mcp_gateway=mcp_gateway,
         cache=cache,
         model_settings=model_settings,
+        knowledge=(rag_backend, chunk_count),
     )
 
     app = create_app(

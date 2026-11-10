@@ -101,8 +101,8 @@ class EvaluationHarness:
     ) -> TrialsReport:
         """每条用例跑 ``trials`` 次（独立 thread_id），统计 pass@k 与 pass^k。
 
-        - **pass@k**：至少一次通过（能力上限——答对过就算）；
-        - **pass^k**：全部通过（部署可靠性——用户每次只拿到一次抽样）。
+        - **pass@k**：至少一次通过（能力上限，答对过就算）；
+        - **pass^k**：全部通过（部署可靠性，用户每次只拿到一次抽样）。
 
         两条指标合看：pass@k 高但 pass^k 低 = 不稳定；两者都高 = 稳定可靠。
         """

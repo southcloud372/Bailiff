@@ -13,9 +13,9 @@
 
 **多副本的三个硬前提**（少一个就会出诡异问题）：
 
-1. `AGENT_CHECKPOINT_BACKEND=postgres` —— 否则 A 副本的审批在 B 副本上不存在；
-2. `AGENT_RATE_LIMIT_BACKEND=redis` —— 否则 N 个副本 = N 倍配额；
-3. 会话亲和性或粘性路由 —— SSE 长连接不能在处理中途换副本。
+1. `AGENT_CHECKPOINT_BACKEND=postgres` ， 否则 A 副本的审批在 B 副本上不存在；
+2. `AGENT_RATE_LIMIT_BACKEND=redis` ， 否则 N 个副本 = N 倍配额；
+3. 会话亲和性或粘性路由 ， SSE 长连接不能在处理中途换副本。
 
 ## 二、配置矩阵
 
@@ -31,6 +31,7 @@
 | `AGENT_CACHE_ENABLED` | `false` | 视流量 | 开在多轮接口上会串上下文 |
 | `AGENT_READ_ONLY` | `false` | 演示环境 `true` | 未开时公网实例可被当免费网盘 |
 | `AGENT_HTTP_ALLOWED_HOSTS` | 空 | 按需最小集 | 留空 = 不出网；填过宽 = SSRF 面变大 |
+| `AGENT_RAG_BACKEND` | `auto`（本地） | `postgres` | 留在本地时多副本各有一份索引，检索结果不一致 |
 | `DEEPSEEK_COST_LIMIT` | 0（不限） | 按租户设 | 不设限额时一个循环能把账单跑穿 |
 
 ## 三、探针与流量
@@ -62,7 +63,7 @@ tar czf fs.tar.gz -C data/fs .
 恢复顺序：`Postgres 实例 → 扩展（vector/pg_trgm）→ 表数据 → 启动应用（`ensure_schema` 建索引）`。
 索引重建期间检索会慢，属预期。
 
-**SQLite 形态的备份**用 `sqlite3 db ".backup out.sqlite"`，不要直接 `cp`——运行中拷贝可能拿到撕裂的快照。
+**SQLite 形态的备份**用 `sqlite3 db ".backup out.sqlite"`，不要直接 `cp`，运行中拷贝可能拿到撕裂的快照。
 
 ## 五、升级
 
@@ -83,7 +84,7 @@ make check
 
 ### 1. `/readyz` 503，`/healthz` 200
 
-说明进程活着但依赖不可用。**不要去重启**——先看 `probes` 里哪个 `critical` 挂了：
+说明进程活着但依赖不可用。**不要去重启**，先看 `probes` 里哪个 `critical` 挂了：
 
 | 失败探针 | 先查 |
 |---|---|
@@ -106,7 +107,7 @@ make check
 - `agent_llm_tokens_total` 按模型看是谁在涨；
 - 是否有循环调用：搜同一 `thread_id` 连续 `tool_call` 记录；
 - 是否有人把 `DEEPSEEK_COST_LIMIT` 设成了 0（不限）；
-- 语义缓存是否误开在多轮接口上（会导致「每次都在重新推理」的反面——命中率异常低）。
+- 语义缓存是否误开在多轮接口上（会导致「每次都在重新推理」的反面，命中率异常低）。
 
 ### 4. SSE 流到一半断了
 
@@ -129,7 +130,7 @@ make check
 | 含 2–3 次工具调用 | 8–15 并发 | 工具的 IO |
 | 纯 `/v1/ask` + 缓存命中 | 100+ QPS | 无 |
 
-扩容优先看 `agent_http_request_duration_seconds` 的 p95，而不是 CPU——Agent 服务的瓶颈通常在等上游。
+扩容优先看 `agent_http_request_duration_seconds` 的 p95，而不是 CPU，Agent 服务的瓶颈通常在等上游。
 
 ## 八、日志
 

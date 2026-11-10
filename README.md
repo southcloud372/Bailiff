@@ -30,6 +30,7 @@ Or run it locally:
 ```bash
 uv sync --extra prod          # Python 3.13 + uv
 cp .env.example .env          # optional: fill DEEPSEEK_API_KEY
+uv run python scripts/ingest.py   # load the sample corpus (no external service)
 uv run python scripts/serve.py
 ```
 
@@ -38,11 +39,11 @@ uv run python scripts/serve.py
 | Capability | Where | Why it matters |
 |---|---|---|
 | **Tool governance** | `gateway/gateway.py` | Rate limit → permission → existence → execute → audit. Agents never call tools directly, so a prompt injection can't reach the filesystem. |
-| **Checkpointed graph** | `core/checkpoint.py` | `memory` / `sqlite` / `postgres` backends. A human-approval interrupt survives a process restart — the #1 thing naive `MemorySaver` demos get wrong. |
+| **Checkpointed graph** | `core/checkpoint.py` | `memory` / `sqlite` / `postgres` backends. A human-approval interrupt survives a process restart, which naive `MemorySaver` demos get wrong. |
 | **MCP gateway** | `gateway/mcp_client.py` | Dynamic `tools/list` discovery, namespace prefixing, per-server fault isolation, stdio + Streamable HTTP. |
 | **Reasoning-model adapter** | `router/deepseek.py` | Passes `reasoning_content` back on tool-call turns and repairs dangling `tool_calls` in history. See [field notes](#field-notes-two-bugs-you-will-hit). |
 | **Cost accounting** | `router/cost.py`, `router/budget.py` | Token-level callback metering, hard budget caps (402), cache-hit pricing, per-model breakdown. |
-| **RAG on pgvector** | `knowledge/` | Connection pool, HNSW + GIN indexes, metadata pre-filtering, citation-traceable context. |
+| **Retrieval** | `knowledge/` | Local SQLite backend works with zero infrastructure; pgvector + HNSW when you scale. Metadata is filtered before ranking, so tenant scoping cannot silently drop recall. |
 | **Evaluation in CI** | `evaluation/`, `scripts/eval.py` | `pass@k` for model selection, `pass^k` for reliability. Non-zero exit code blocks the release. |
 | **Observability** | `observability/` | `/healthz` vs `/readyz` (liveness ≠ readiness), Prometheus `/metrics`, OTel `gen_ai.*` spans → Langfuse. |
 | **Guardrails** | `guardrails/guards.py` | Input injection detection before the model, PII masking before the response. |
@@ -116,9 +117,9 @@ OpenAI-compatible APIs require every `tool_call_id` to be answered by a `tool` m
 An assistant message with 'tool_calls' must be followed by tool messages...
 ```
 
-The error never mentions the real cause, and it is sticky — the thread is dead forever.
+The error never mentions the real cause, and it is sticky: the thread is dead for good.
 
-Fix, in two layers:
+Fix, in two layers.
 1. All tool exceptions — including permission denials — are converted into structured results (`{"ok": false, "kind": "permission_denied", ...}`) so the model can explain the failure instead of the process dying. Governance still happens in the gateway; audit still records it.
 2. `_repair_dangling_tool_calls` backfills missing tool messages on the way out, so already-corrupted threads self-heal.
 
@@ -128,7 +129,7 @@ Regression tests: [`tests/test_deepseek_payload.py`](tests/test_deepseek_payload
 
 | Method | Path | Notes |
 |---|---|---|
-| GET | `/healthz` | Liveness only — never touches downstream |
+| GET | `/healthz` | Liveness only, never touches downstream |
 | GET | `/readyz` | Concurrent dependency probes; any critical failure → 503 (drain traffic, don't restart) |
 | GET | `/metrics` | Prometheus text format, zero extra dependencies |
 | POST | `/v1/chat` | Stateful, multi-turn (checkpointed by `thread_id`) |
@@ -138,7 +139,7 @@ Regression tests: [`tests/test_deepseek_payload.py`](tests/test_deepseek_payload
 | POST | `/v1/tickets` | Start a human-approval workflow; `/{id}/resume` continues after `interrupt()` |
 | GET/DELETE | `/v1/cache` | Semantic cache stats / purge |
 | POST | `/mcp/fs/mcp` | Filesystem exposed as an MCP server (stateless Streamable HTTP) |
-| POST | `/v1/auth/dev-token` | **dev only** — this route is not registered outside `AGENT_ENV=dev` |
+| POST | `/v1/auth/dev-token` | **dev only**; not registered outside `AGENT_ENV=dev` |
 
 ```bash
 TOKEN=$(curl -s -X POST localhost:8000/v1/auth/dev-token -H 'content-type: application/json' -d '{}' | jq -r .token)

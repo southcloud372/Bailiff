@@ -30,7 +30,7 @@ def main() -> int:
     payload = {
         "model": model,
         "messages": [
-            {"role": "system", "content": "你是企业级 Agent 平台的基础设施冒烟测试。"},
+            {"role": "system", "content": "你是生产级 Agent 平台的基础设施冒烟测试。"},
             {"role": "user", "content": "用一句话说明你是什么模型，并确认你能正常返回。"},
         ],
         "max_tokens": 64,

@@ -1,23 +1,10 @@
-"""MCP 客户端聚合：把外部 MCP server 接进网关，形成真正的「MCP 网关」。
+"""MCP 客户端网关：连接外部 MCP server，把发现的工具注册进治理网关。
 
-### 为什么这块决定项目的可信度
+职责有三件：通过 tools/list 动态发现工具而不是写死清单；给工具名加 server 前缀，
+避免不同 server 的同名工具互相覆盖；包装成 (principal, args) -> result 的签名，
+从而复用鉴权、限流与审计。
 
-很多「MCP 网关」项目其实是「给几个 Python 函数套了个权限装饰器」——面试官问一句
-「你的网关怎么发现工具、怎么连一个第三方 MCP server」就穿了。真正的网关必须：
-
-1. **作为 MCP 客户端**连上去（stdio 子进程 / Streamable HTTP），而不是假设工具就是本地函数；
-2. 用 ``tools/list`` **动态发现**工具与 JSON Schema，而不是硬编码工具清单；
-3. 把发现的工具**转成网关统一签名** ``(principal, args) -> result``，从而复用鉴权/限流/
-   审计/护栏——治理不旁路；
-4. 名字加 **server 前缀**避免冲突（``filesystem__read_file``），并在权限策略里
-   自动补上「默认拒绝 + 显式放行」规则；
-5. 单个 server 挂掉**不影响其他 server**（部分可用优于整体不可用）。
-
-### 传输方式
-
-- ``stdio``：网关拉起子进程，走 stdin/stdout（本地/容器内工具最常见）；
-- ``http``：连远端 ``/mcp`` 端点（MCP 2026-07-28 的无状态 Streamable HTTP，
-  每个请求自包含协议版本，可直接跑在 LB / Serverless 后面）。
+单个 server 连不上时只标记为不可用，不影响其余工具。
 """
 
 from __future__ import annotations

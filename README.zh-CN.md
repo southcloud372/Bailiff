@@ -33,6 +33,7 @@ docker compose -f docker-compose.demo.yml up --build
 ```bash
 uv sync --extra prod          # Python 3.13 + uv
 cp .env.example .env          # 可选：填 DEEPSEEK_API_KEY
+uv run python scripts/ingest.py   # 灌入示例语料，不依赖任何外部服务
 uv run python scripts/serve.py
 ```
 
@@ -41,16 +42,16 @@ uv run python scripts/serve.py
 | 能力 | 位置 | 为什么重要 |
 |---|---|---|
 | **工具治理** | `gateway/gateway.py` | 限流 → 权限 → 存在性 → 执行 → 审计。Agent 不直接持有函数，提示词注入拿不到文件系统。 |
-| **可持久化图状态** | `core/checkpoint.py` | memory / sqlite / postgres 三种后端。人工审批的 `interrupt()` 能跨进程重启存活——这是 `MemorySaver` demo 最常翻车的地方。 |
+| **可持久化图状态** | `core/checkpoint.py` | memory / sqlite / postgres 三种后端。人工审批的 `interrupt()` 能跨进程重启存活，这是 `MemorySaver` demo 最常翻车的地方。 |
 | **MCP 网关** | `gateway/mcp_client.py` | `tools/list` 动态发现、命名空间前缀、单 server 故障隔离、stdio + Streamable HTTP。 |
 | **思考模型适配** | `router/deepseek.py` | 工具调用轮次回传 `reasoning_content`，并修复历史里悬空的 `tool_calls`。见下方「两个真实坑」。 |
 | **成本核算** | `router/cost.py`、`router/budget.py` | token 级回调计费、预算硬限额（402）、上下文缓存命中单独计价、按模型拆分。 |
-| **pgvector RAG** | `knowledge/` | 连接池、HNSW + GIN 索引、metadata 前置过滤、可溯源引用。 |
+| **检索** | `knowledge/` | 默认本地 SQLite 后端，零基础设施可用；上规模后切 pgvector + HNSW。metadata 先过滤后排序，租户隔离不会悄悄丢召回。 |
 | **评测进门禁** | `evaluation/`、`scripts/eval.py` | 选模型看 `pass@k`，上线看 `pass^k`；不达标 CI 直接非零退出。 |
 | **可观测** | `observability/` | `/healthz` 与 `/readyz` 语义分离、Prometheus `/metrics`、OTel `gen_ai.*` → Langfuse。 |
 | **护栏** | `guardrails/guards.py` | 模型之前拦注入，返回之前脱敏。 |
 | **出网 + SSRF 防护** | `tools/web.py` | 域名白名单（默认拒绝）、DNS 解析后校验 IP、逐跳复检重定向、字节上限。不配置就不注册。 |
-| **只读模式** | `gateway/wiring.py` | `AGENT_READ_ONLY=true` 时写入工具**不注册**——能力不存在，而不是存在但拒绝。 |
+| **只读模式** | `gateway/wiring.py` | `AGENT_READ_ONLY=true` 时写入工具**不注册**，能力不存在，而不是存在但拒绝。 |
 
 ## 架构
 
@@ -109,7 +110,7 @@ The `reasoning_content` in the thinking mode must be passed back to the API.
 ```
 
 而 LangChain 的 `ChatOpenAI` 序列化时会丢掉 `additional_kwargs`，于是**第一次工具调用成功、
-第二次模型调用必 400**。纯聊天完全正常——所以 demo 永远测不出来。
+第二次模型调用必 400**。纯聊天完全正常，所以 demo 永远测不出来。
 
 修复：[`router/deepseek.py`](agent_platform/router/deepseek.py) 覆写 `_get_request_payload` 补回该字段。
 
@@ -122,7 +123,7 @@ checkpoint 里就会留下「N 个 tool_calls + N−1 个结果」。从此这�
 An assistant message with 'tool_calls' must be followed by tool messages...
 ```
 
-报错与真实原因毫无关系，而且是**粘性**的——线程永久坏死。
+报错与真实原因毫无关系，而且是**粘性**的，线程永久坏死。
 
 修复分两层：
 1. **所有**工具异常（含越权、限流、沙箱拒绝）都转成结构化结果
@@ -146,7 +147,7 @@ An assistant message with 'tool_calls' must be followed by tool messages...
 | POST | `/v1/tickets` | 发起人工审批工作流；`/{id}/resume` 审批后继续 |
 | GET/DELETE | `/v1/cache` | 语义缓存统计 / 清空 |
 | POST | `/mcp/fs/mcp` | 把文件系统暴露成 MCP server（无状态 Streamable HTTP） |
-| POST | `/v1/auth/dev-token` | **仅 dev**——非 `AGENT_ENV=dev` 时这条路由根本不注册 |
+| POST | `/v1/auth/dev-token` | **仅 dev**，非 `AGENT_ENV=dev` 时这条路由根本不注册 |
 
 ## 为什么不直接用…
 
@@ -175,10 +176,10 @@ docker compose up -d
 
 | 变量 | 默认 | 生产 |
 |---|---|---|
-| `AGENT_ENV` | `dev` | `prod`——示例 JWT 密钥直接拒绝启动 |
+| `AGENT_ENV` | `dev` | `prod`，示例 JWT 密钥直接拒绝启动 |
 | `AGENT_CHECKPOINT_BACKEND` | `sqlite` | `postgres` |
 | `AGENT_RATE_LIMIT_BACKEND` | `memory` | `redis`（Lua 滑动窗口，故障时降级到本地桶而不是放行） |
-| `AGENT_LLM_BACKEND` | `auto` | `deepseek`——缺 key 直接报错，不静默用假模型 |
+| `AGENT_LLM_BACKEND` | `auto` | `deepseek`，缺 key 直接报错，不静默用假模型 |
 
 `/readyz` 会报出实际生效的后端，配置错了在接流量之前就能看见。
 
