@@ -188,7 +188,7 @@ docker compose up -d
 make check     # ruff + mypy --strict + pytest
 ```
 
-ruff 9 类规则全绿 · mypy --strict 54 文件 0 issue · 160 测试通过、1 跳过（Postgres 集成测试，需 Docker）。
+ruff 9 类规则全绿 · mypy --strict 55 文件 0 issue · 184 测试通过、1 跳过（Postgres 集成测试，需 Docker）。
 
 ## 路线图
 

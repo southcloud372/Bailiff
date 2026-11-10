@@ -195,7 +195,7 @@ Production knobs (all env vars, no code change):
 make check     # ruff + mypy --strict + pytest
 ```
 
-`ruff` clean across 9 rule families · `mypy --strict` 54 files, 0 issues · 160 tests, 1 skipped (Postgres integration, needs Docker).
+`ruff` clean across 9 rule families · `mypy --strict` 55 files, 0 issues · 184 tests, 1 skipped (Postgres integration, needs Docker).
 
 ## Roadmap
 
