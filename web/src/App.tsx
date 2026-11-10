@@ -173,7 +173,7 @@ export default function App() {
       <header className="topbar">
         <div className="brand">
           <span className="logo">◈</span>
-          <span className="name">Agent Platform</span>
+          <span className="name">Bailiff</span>
           <span className={`badge ${health}`}>
             {health === "ok" ? "网关在线" : health === "down" ? "网关离线" : "检测中…"}
           </span>

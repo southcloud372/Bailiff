@@ -5,7 +5,7 @@ Thanks for taking the time to contribute. This document is deliberately short an
 ## Setup
 
 ```bash
-git clone https://github.com/OWNER/agent-platform && cd agent-platform
+git clone https://github.com/southcloud372/Bailiff && cd Bailiff
 uv sync --extra prod          # Python 3.13, uv
 cd web && npm install && cd ..
 cp .env.example .env          # optional; leave DEEPSEEK_API_KEY empty to run offline

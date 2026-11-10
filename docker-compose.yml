@@ -10,7 +10,7 @@
 # - Redis 8 自带向量集；本项目只用它的限流/缓存/幂等能力，未强依赖向量特性。
 # - Langfuse 自托管是六件套（web/worker/PG/ClickHouse/Redis/S3），体量远超本文件，
 #   校招演示建议直接用 Cloud 免费层，只把 OTLP endpoint 指向它（见 docs/observability.md）。
-name: agent-platform
+name: bailiff
 
 services:
   db:

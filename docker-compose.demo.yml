@@ -10,7 +10,7 @@ services:
     build:
       context: .
       dockerfile: deploy/Dockerfile
-    image: agent-platform:demo
+    image: bailiff:demo
     ports:
       - "8000:8000"
     environment:

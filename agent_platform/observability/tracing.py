@@ -26,7 +26,7 @@ from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
 from opentelemetry.trace import Span
 
-SERVICE_NAME = "agent-platform"
+SERVICE_NAME = "bailiff"
 
 
 def _otlp_endpoint() -> str:

@@ -216,7 +216,7 @@ def create_app(
                 for hook in reversed(shutdown_hooks or []):
                     await hook()
 
-    app = FastAPI(title="Agent Platform Gateway", version="0.1.0", lifespan=lifespan)
+    app = FastAPI(title="Bailiff Gateway", version="0.2.0", lifespan=lifespan)
     # 最外层中间件：request id 透传/回显、结构化访问日志、HTTP 指标。
     # 必须是纯 ASGI 实现——BaseHTTPMiddleware 会破坏 SSE 的逐块下发。
     app.add_middleware(RequestContextMiddleware)
@@ -515,7 +515,7 @@ def create_app(
         async def landing() -> PlainTextResponse:
             """未构建前端时的极简首页：至少让人知道服务起来了、下一步去哪。"""
             return PlainTextResponse(
-                "Agent Platform is running.\n"
+                "Bailiff is running.\n"
                 "  GET  /healthz  /readyz  /metrics\n"
                 "  POST /v1/chat  /v1/chat/stream\n"
                 "  GET  /docs    (OpenAPI)\n"

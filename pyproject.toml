@@ -1,7 +1,7 @@
 [project]
-name = "agent-platform"
+name = "bailiff"
 version = "0.2.0"
-description = "Enterprise multi-agent orchestration platform (campus recruitment flagship project)"
+description = "Production-grade agent runtime: every tool call is governed before it executes. MCP-native, durable checkpoints, hard cost caps, eval-gated CI."
 readme = "README.md"
 requires-python = ">=3.13"
 

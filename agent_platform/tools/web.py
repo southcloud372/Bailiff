@@ -57,7 +57,7 @@ class FetchPolicy:
     allowed_hosts: frozenset[str] = field(default_factory=frozenset)
     max_bytes: int = 512 * 1024
     timeout_s: float = 10.0
-    user_agent: str = "agent-platform/0.2 (+https://github.com/OWNER/agent-platform)"
+    user_agent: str = "bailiff/0.2 (+https://github.com/southcloud372/Bailiff)"
 
     def allows(self, host: str) -> bool:
         """精确匹配，或以 ``*.`` 开头的后缀匹配（只允许一层子域）。"""

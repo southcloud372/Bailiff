@@ -1,13 +1,13 @@
 # Agent 平台 API 服务镜像（多阶段构建）。
 #
-# 构建：docker build -f deploy/Dockerfile -t agent-platform .
+# 构建：docker build -f deploy/Dockerfile -t bailiff .
 # 运行：docker run -p 8000:8000 \
 #          -e DEEPSEEK_API_KEY=... -e AGENT_HOST=0.0.0.0 \
 #          -e AGENT_CHECKPOINT_BACKEND=postgres \
 #          -e AGENT_POSTGRES_DSN=postgresql://agent:agent@db:5432/agent_platform \
 #          -e AGENT_RATE_LIMIT_BACKEND=redis \
 #          -e AGENT_REDIS_URL=redis://redis:6379/0 \
-#          agent-platform
+#          bailiff
 #
 # 要点：
 # - 密钥只通过运行时环境变量注入，绝不打进镜像层；
