@@ -1,0 +1,45 @@
+{"query": "员工年假有多少天？", "source": "hr-policy.md", "answer": "入职满一年享 5 天带薪年假"}
+{"query": "请病假需要提供什么证明？", "source": "hr-policy.md", "answer": "三甲医院开具的病假条"}
+{"query": "请事假要提前多久申请？", "source": "hr-policy.md", "answer": "提前 3 个工作日申请"}
+{"query": "婚假有几天？", "source": "hr-policy.md", "answer": "3 天婚假"}
+{"query": "一线城市差旅住宿每晚标准是多少？", "source": "hr-policy.md", "answer": "一线城市每晚不超过 600 元"}
+{"query": "报销多久能打款？", "source": "hr-policy.md", "answer": "10 个工作日内打款"}
+{"query": "法定节假日加班怎么补偿？", "source": "hr-policy.md", "answer": "3 倍工资或 3 倍调休"}
+{"query": "调休需要在多久内用完？", "source": "hr-policy.md", "answer": "30 天内使用"}
+{"query": "系统账号必须开启什么认证？", "source": "it-policy.md", "answer": "双因素认证（2FA）"}
+{"query": "密码最低要多少位？", "source": "it-policy.md", "answer": "至少 12 位"}
+{"query": "密码多久强制更换一次？", "source": "it-policy.md", "answer": "90 天强制更换"}
+{"query": "生产环境访问权限有效期多久？", "source": "it-policy.md", "answer": "授权有效期 90 天"}
+{"query": "数据库直接写入权限授予谁？", "source": "it-policy.md", "answer": "仅授予 DBA"}
+{"query": "敏感数据可以明文存储吗？", "source": "it-policy.md", "answer": "禁止明文存储"}
+{"query": "代码合并到主干前必须经过什么？", "source": "it-policy.md", "answer": "代码评审"}
+{"query": "出差要提前几天提交申请？", "source": "travel-policy.md", "answer": "提前 5 个工作日提交出差申请"}
+{"query": "市内打车每天报销上限多少？", "source": "travel-policy.md", "answer": "单日打车报销上限 200 元"}
+{"query": "出差伙食补助每天多少？", "source": "travel-policy.md", "answer": "每人每天 80 元"}
+{"query": "内推入职奖励多少钱？", "source": "recruitment-policy.md", "answer": "奖励 5000 元"}
+{"query": "试用期一般几个月？", "source": "recruitment-policy.md", "answer": "试用期统一 3 个月"}
+{"query": "背景调查周期多久？", "source": "recruitment-policy.md", "answer": "调查周期 5 个工作日"}
+{"query": "年度调薪一年几次？", "source": "compensation-policy.md", "answer": "每年 4 月与 10 月各一次"}
+{"query": "绩效评级 S 档额外上调多少？", "source": "compensation-policy.md", "answer": "S 档可额外上调 5%"}
+{"query": "入职不满多久年终奖按比例折算？", "source": "compensation-policy.md", "answer": "入职不满 6 个月按实际在职月数折算"}
+{"query": "每人每年培训预算是多少？", "source": "training-policy.md", "answer": "每人每年培训预算 3000 元"}
+{"query": "晋升答辩一年几次？", "source": "training-policy.md", "answer": "每年 2 次"}
+{"query": "导师辅导津贴每月多少？", "source": "training-policy.md", "answer": "每月辅导津贴 500 元"}
+{"query": "核心在岗时间是几点到几点？", "source": "attendance-policy.md", "answer": "10:00-16:00"}
+{"query": "漏卡几天内要补卡？", "source": "attendance-policy.md", "answer": "3 个工作日内补卡"}
+{"query": "每月加班多少小时封顶？", "source": "attendance-policy.md", "answer": "40 小时封顶"}
+{"query": "标准笔记本什么配置？", "source": "equipment-policy.md", "answer": "16GB 内存 + 512GB 固态硬盘"}
+{"query": "笔记本用几年可以申请报废？", "source": "equipment-policy.md", "answer": "满 4 年"}
+{"query": "设备丢失要几小时内报备？", "source": "equipment-policy.md", "answer": "24 小时内报备"}
+{"query": "数据分几级？", "source": "data-classification-policy.md", "answer": "公开（L1）、内部（L2）、机密（L3）、绝密（L4）"}
+{"query": "手机号怎么脱敏？", "source": "data-classification-policy.md", "answer": "保留前 3 位与后 4 位"}
+{"query": "数据导出日志留存多久？", "source": "data-classification-policy.md", "answer": "留存不少于 3 年"}
+{"query": "P1 事件多久内上报？", "source": "incident-response-policy.md", "answer": "15 分钟内上报"}
+{"query": "数据泄露事件多久内通知用户？", "source": "incident-response-policy.md", "answer": "72 小时内通知"}
+{"query": "复盘报告几个工作日内完成？", "source": "incident-response-policy.md", "answer": "5 个工作日内完成复盘报告"}
+{"query": "单笔采购多少以下由部门负责人审批？", "source": "procurement-policy.md", "answer": "5000 元以下"}
+{"query": "供应商准入评审周期多久？", "source": "procurement-policy.md", "answer": "10 个工作日"}
+{"query": "合同预付款比例上限？", "source": "procurement-policy.md", "answer": "不超过合同总额 30%"}
+{"query": "每周最多几天远程办公？", "source": "remote-work-policy.md", "answer": "每周最多 2 天"}
+{"query": "远程办公要多久内响应消息？", "source": "remote-work-policy.md", "answer": "30 分钟内响应"}
+{"query": "远程办公每月补贴上限？", "source": "remote-work-policy.md", "answer": "每人每月上限 150 元"}

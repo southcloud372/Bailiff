@@ -1,0 +1,29 @@
+name: Feature request
+description: Propose a capability
+labels: ["enhancement", "triage"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What are you unable to do today? Describe the situation, not the solution.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed approach
+      description: How would you solve it? Which layer does it belong to (transport / orchestration / governance / model / memory)?
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Including "do nothing" and "use project X instead".
+  - type: checkboxes
+    id: principles
+    attributes:
+      label: Design principles
+      options:
+        - label: Works with zero external infrastructure by default
+        - label: Degrades visibly (does not fail silently)
+        - label: Does not let the model reach a tool without passing the gateway

@@ -67,7 +67,7 @@ class FakeEmbedder:
         normalized = text.lower()
         for i in range(len(normalized) - 2):
             gram = normalized[i : i + 3].encode("utf-8")
-            idx = int.from_bytes(hashlib.md5(gram).digest()[:4], "big") % self._dim
+            idx = int.from_bytes(hashlib.md5(gram).digest()[:4], "big") % self._dim  # noqa: S324 - 确定性哈希，非加密
             vec[idx] += 1.0
         norm = math.sqrt(sum(x * x for x in vec)) or 1.0
         return [x / norm for x in vec]

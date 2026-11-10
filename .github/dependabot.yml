@@ -1,0 +1,27 @@
+version: 2
+updates:
+  - package-ecosystem: uv
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      # 上游 SDK 常常一起升级（langchain 生态版本必须对齐），分组减少噪音
+      langchain:
+        patterns:
+          - "langchain*"
+          - "langgraph*"
+      observability:
+        patterns:
+          - "opentelemetry*"
+
+  - package-ecosystem: npm
+    directory: "/web"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 3
+
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: monthly

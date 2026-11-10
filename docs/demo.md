@@ -13,7 +13,7 @@ cp .env.example .env   # 填入真实 DEEPSEEK_API_KEY
 
 ```bash
 uv run ruff check . && uv run mypy agent_platform && uv run pytest -q
-# 预期：ruff/mypy 全绿，pytest 90+ passed
+# 预期：ruff/mypy 全绿，pytest 184 passed
 ```
 
 ## 2. 模型冒烟（搭好平台 → 调模型）
@@ -27,7 +27,7 @@ uv run python scripts/smoke_stream.py  # SSE 流式逐 token 输出
 
 ```bash
 uv run python scripts/eval.py
-# 预期：golden dataset 10/10 通过，均分 ~98，LLM-as-judge 逐条给分+理由
+# 预期：golden dataset 全部通过（阈值 80），LLM-as-judge 逐条给分+理由
 ```
 
 ## 4. 起服务 + 前端（HTTP 全链路）

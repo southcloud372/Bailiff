@@ -21,7 +21,7 @@ from agent_platform.gateway.wiring import build_platform
 DATASET = Path("agent_platform/evaluation/golden.jsonl")
 
 
-async def _run(threshold: int) -> int:
+async def _run(threshold: int, trials: int) -> int:
     platform = build_platform()
     settings = ModelSettings()
     agent = build_agent(settings, platform.gateway)
@@ -30,20 +30,35 @@ async def _run(threshold: int) -> int:
     principal = Principal(id="eval", roles=frozenset({"agent"}))
 
     harness = EvaluationHarness(agent, judge.evaluate, threshold=threshold)
-    report = await harness.run(load_dataset(DATASET), principal=principal)
+    cases = load_dataset(DATASET)
+    report = await harness.run(cases, principal=principal)
 
     print(f"评测结果: {report.passed}/{report.total} 通过，平均分 {report.avg_score}")
     for case in report.cases:
         mark = "✓" if case.passed else "✗"
         print(f"  [{mark}] {case.case_id}: {case.score} 分 — {case.reason}")
+
+    if trials > 1:
+        trials_report = await harness.run_trials(cases, principal=principal, trials=trials)
+        print(
+            f"多轮采样 k={trials}: "
+            f"pass@{trials}={trials_report.pass_at_k:.0%}, "
+            f"pass^{trials}={trials_report.pass_k:.0%}"
+        )
     return 0 if report.passed == report.total else 1
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Agent 平台 golden dataset 评测")
     parser.add_argument("--threshold", type=int, default=60, help="通过分数线（0-100）")
+    parser.add_argument(
+        "--trials",
+        type=int,
+        default=1,
+        help="每条用例的采样次数（>1 时输出 pass@k / pass^k）",
+    )
     args = parser.parse_args()
-    return asyncio.run(_run(args.threshold))
+    return asyncio.run(_run(args.threshold, args.trials))
 
 
 if __name__ == "__main__":

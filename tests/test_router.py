@@ -67,7 +67,7 @@ async def test_all_models_fail_raises() -> None:
 
 def test_build_router_requires_api_key() -> None:
     with pytest.raises(ModelRoutingError):
-        build_router(ModelSettings(api_key="", model="deepseek-chat"))
+        build_router(ModelSettings(api_key="", model="deepseek-flash"))
 
 
 def test_build_router_no_models_raises() -> None:
@@ -92,3 +92,47 @@ async def test_router_records_cost_to_tracker() -> None:
     assert s.total_completion_tokens == 2
     # 未知模型报价缺失 → 成本 0，但用量仍被记录
     assert s.total_cost == 0.0
+
+
+@pytest.mark.asyncio
+async def test_router_tracks_cached_tokens() -> None:
+    tracker = CostTracker()
+
+    async def fake(**kwargs: object) -> SimpleNamespace:
+        return SimpleNamespace(
+            model="m1",
+            choices=[SimpleNamespace(message=SimpleNamespace(content="ok"))],
+            usage=SimpleNamespace(
+                prompt_tokens=100,
+                completion_tokens=10,
+                total_tokens=110,
+                prompt_tokens_details=SimpleNamespace(cached_tokens=60),
+            ),
+        )
+
+    router = ModelRouter(
+        ["m1"], api_key="k", base_url="http://x", completion=fake, cost_tracker=tracker
+    )
+    result = await router.complete([{"role": "user", "content": "hi"}])
+
+    assert result.cached_tokens == 60
+    s = tracker.summary()
+    assert s.total_cached_tokens == 60
+    assert s.cache_hit_rate == 0.6
+
+
+@pytest.mark.asyncio
+async def test_router_cached_tokens_defaults_to_zero() -> None:
+    # usage 无 prompt_tokens_details 时，cached_tokens 应为 0（不臆造）
+    tracker = CostTracker()
+
+    async def fake(**kwargs: object) -> SimpleNamespace:
+        return _resp("ok", model="m1", prompt=100, completion=10)
+
+    router = ModelRouter(
+        ["m1"], api_key="k", base_url="http://x", completion=fake, cost_tracker=tracker
+    )
+    result = await router.complete([{"role": "user", "content": "hi"}])
+
+    assert result.cached_tokens == 0
+    assert tracker.summary().total_cached_tokens == 0

@@ -1,0 +1,51 @@
+name: Bug report
+description: Something behaves incorrectly
+labels: ["bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Before filing: if the agent fails **on the second tool call** or a thread stops working
+        forever after one failure, check the "Field notes" section of the README first — those two
+        failure modes are documented, with fixes.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: Actual behaviour, including the full error message.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Minimal reproduction
+      description: curl command, test case, or code snippet. Smallest thing that still fails.
+      render: shell
+    validations:
+      required: true
+  - type: input
+    id: versions
+    attributes:
+      label: Versions
+      description: Output of `uv run python -c "import agent_platform; print(agent_platform.__version__)"`, plus model and backend settings.
+    validations:
+      required: true
+  - type: dropdown
+    id: backend
+    attributes:
+      label: Runtime backend
+      multiple: true
+      options:
+        - checkpoint: sqlite
+        - checkpoint: postgres
+        - checkpoint: memory
+        - rate limit: memory
+        - rate limit: redis
+        - llm: deepseek
+        - llm: mock (offline demo)

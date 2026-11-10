@@ -8,7 +8,7 @@ from typing import Any
 from agent_platform.gateway.audit import AuditEvent, AuditLogger, Outcome
 from agent_platform.gateway.errors import PermissionDenied, RateLimitExceeded, UnknownTool
 from agent_platform.gateway.policy import PermissionPolicy, Principal
-from agent_platform.gateway.ratelimit import RateLimiter
+from agent_platform.gateway.ratelimit import Limiter
 from agent_platform.gateway.registry import ToolRegistry
 
 
@@ -21,7 +21,7 @@ class Gateway:
         policy: PermissionPolicy,
         audit: AuditLogger,
         *,
-        rate_limiter: RateLimiter | None = None,
+        rate_limiter: Limiter | None = None,
     ) -> None:
         self._registry = registry
         self._policy = policy
@@ -38,7 +38,9 @@ class Gateway:
         start = time.perf_counter()
 
         # 1. 限流（最早，防 DoS）
-        if self._rate_limiter is not None and not self._rate_limiter.allow(principal.id):
+        if self._rate_limiter is not None and not await self._rate_limiter.aallow(
+            principal.id
+        ):
             self._record(principal, tool, arguments, "rate_limited", start)
             raise RateLimitExceeded(principal.id)
 

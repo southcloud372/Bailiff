@@ -14,9 +14,10 @@ from agent_platform.gateway.auth import TokenVerifier
 from agent_platform.gateway.config import Settings
 from agent_platform.gateway.gateway import Gateway
 from agent_platform.gateway.policy import PermissionPolicy, PermissionRule, Principal
-from agent_platform.gateway.ratelimit import RateLimiter
+from agent_platform.gateway.ratelimit import Limiter, RateLimiter
 from agent_platform.gateway.registry import ToolFn, ToolRegistry
 from agent_platform.tools.filesystem import list_dir, read_file, write_file
+from agent_platform.tools.web import FetchPolicy, build_http_tools, parse_hosts
 
 
 def _filesystem_tools(root: Path) -> dict[str, ToolFn]:
@@ -44,12 +45,14 @@ class Platform:
         registry: ToolRegistry,
         audit: AuditLogger,
         settings: Settings,
+        policy: PermissionPolicy,
     ) -> None:
         self.gateway = gateway
         self.verifier = verifier
         self.registry = registry
         self.audit = audit
         self.settings = settings
+        self.policy = policy
 
 
 def build_platform(
@@ -57,35 +60,51 @@ def build_platform(
     *,
     extra_tools: dict[str, ToolFn] | None = None,
     extra_rules: list[PermissionRule] | None = None,
+    rate_limiter: Limiter | None = None,
 ) -> Platform:
     """组装一个完整的平台实例。
 
     ``extra_tools`` / ``extra_rules`` 用于在组合根之外注入额外工具（如知识库检索、
     长期记忆）及其权限规则，让这些工具同样走网关的鉴权/限流/审计。
+
+    ``rate_limiter`` 由调用方按部署形态注入（单机内存 / 多副本 Redis）；
+    不传时用设置里的令牌桶参数构造进程内实现，保证本地零依赖可跑。
     """
     settings = settings or Settings()
 
     registry = ToolRegistry()
-    for name, fn in _filesystem_tools(settings.fs_root).items():
+    fs_tools = _filesystem_tools(settings.fs_root)
+    if settings.read_only:
+        # 只读模式：直接不注册写工具。Agent 的工具清单里看不到它，
+        # 也就不会出现「模型反复尝试一个注定被拒的操作」这种体验。
+        fs_tools.pop("write_file", None)
+    for name, fn in fs_tools.items():
         registry.register(name, fn)
     for name, fn in (extra_tools or {}).items():
         registry.register(name, fn)
 
-    policy = PermissionPolicy(
-        rules=[
-            PermissionRule(tool="read_file", roles=frozenset({"agent"})),
-            PermissionRule(tool="write_file", roles=frozenset({"agent"})),
-            PermissionRule(tool="list_dir", roles=frozenset({"agent"})),
-            *(extra_rules or []),
-        ]
+    # 出网能力默认关闭，配置白名单后才注册（见 tools/web.py 的安全模型）
+    http_tools = build_http_tools(
+        FetchPolicy(allowed_hosts=parse_hosts(settings.http_allowed_hosts))
     )
+    for name, fn in http_tools.items():
+        registry.register(name, fn)
+
+    rules = [
+        PermissionRule(tool=name, roles=frozenset({"agent"})) for name in fs_tools
+    ]
+    rules.extend(
+        PermissionRule(tool=name, roles=frozenset({"agent"})) for name in http_tools
+    )
+    rules.extend(extra_rules or [])
+    policy = PermissionPolicy(rules=rules)
 
     audit = AuditLogger()
-    limiter = RateLimiter(
+    limiter = rate_limiter or RateLimiter(
         capacity=settings.rate_limit_capacity,
         refill_per_second=settings.rate_limit_refill_per_second,
     )
     gateway = Gateway(registry, policy, audit, rate_limiter=limiter)
     verifier = TokenVerifier(settings.jwt_secret, algorithm=settings.jwt_algorithm)
 
-    return Platform(gateway, verifier, registry, audit, settings)
+    return Platform(gateway, verifier, registry, audit, settings, policy)
