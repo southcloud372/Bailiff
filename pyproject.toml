@@ -55,7 +55,7 @@ observability = [
 dev = [
     "pytest>=9.2,<10",
     "pytest-asyncio>=1.4,<2",
-    "ruff>=0.17,<1",
+    "ruff>=0.17.5,<1",
     "mypy>=2.4,<3",
 ]
 
